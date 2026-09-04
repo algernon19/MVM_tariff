@@ -1,0 +1,13 @@
+{
+  "domain": "mvm_tariff",
+  "name": "MVM Tarifa (P1 + A1/D)",
+  "codeowners": ["@algernon19"],
+  "config_flow": true,
+  "dependencies": ["recorder", "mqtt"],
+  "documentation": "https://github.com/algernon19/mvm-tariff",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/algernon19/mvm-tariff/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

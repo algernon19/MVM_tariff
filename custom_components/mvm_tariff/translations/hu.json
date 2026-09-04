@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MVM Tarifa",
+        "description": "Add meg a saját ESP-s P1 mérőd MQTT gyökér-topikját (a jantenhove/esp8266_p1meter projekt alapértelmezetten \"sensors/power/p1meter\" alá publikál).",
+        "data": {
+          "mqtt_root_topic": "MQTT gyökér-topik"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Az integráció már be van állítva."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MVM Tarifa",
+        "description": "Válassz beállítást.",
+        "menu_options": {
+          "pricing": "Áram ára (A1)",
+          "d_tariff": "D (dinamikus) tarifa"
+        }
+      },
+      "pricing": {
+        "title": "A1 tarifa",
+        "description": "Sávos lakossági ár: a keretig a kedvezményes, felette a piaci egységár. A keret elszámolása HAVI (a ~210 kWh/hó, ami a havi számlán megjelenik) vagy ÉVES (2523 kWh jan. 1-től) lehet.",
+        "data": {
+          "price_low": "Kedvezményes ár (Ft/kWh, bruttó)",
+          "price_high": "Piaci ár a keret felett (Ft/kWh, bruttó)",
+          "annual_threshold_kwh": "Éves kedvezményes keret (kWh)",
+          "allowance_period": "Keret elszámolása"
+        }
+      },
+      "d_tariff": {
+        "title": "D (dinamikus) tarifa",
+        "description": "A D tarifánál is megmarad a kedvezményes keret: a keretig az A1 ár, csak a keret feletti rész megy a 15 perces HUPX tőzsdei áron. Az árakat internetről tölti le (api.energy-charts.info, és - ha az árfolyam 0 - az MNB napi EUR/HUF árfolyamát); ez az egyetlen pont, ahol az integráció hálózatot használ. A díjtételek becsültek, szabadon állíthatók.",
+        "data": {
+          "d_enabled": "D tarifa számítás bekapcsolása",
+          "d_merchant_fee_huf_kwh": "Kereskedői díj (Ft/kWh, nettó)",
+          "d_transmission_fee_huf_kwh": "Átviteli rendszerhasználati díj (Ft/kWh, nettó)",
+          "d_distribution_fee_huf_kwh": "Elosztói rendszerhasználati díj (Ft/kWh, nettó)",
+          "d_vat_percent": "ÁFA (%)",
+          "d_eur_huf": "EUR/HUF árfolyam (0 = MNB napi árfolyam automatikusan)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "allowance_period": {
+      "options": {
+        "monthly": "Havi (a számlán megjelenő ~210 kWh/hó)",
+        "yearly": "Éves (2523 kWh, jan. 1-től)"
+      }
+    }
+  }
+}

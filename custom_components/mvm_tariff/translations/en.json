@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MVM Tariff",
+        "description": "Set your P1 meter's MQTT root topic (the jantenhove/esp8266_p1meter project publishes under \"sensors/power/p1meter\" by default).",
+        "data": {
+          "mqtt_root_topic": "MQTT root topic"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "The integration is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MVM Tariff",
+        "description": "Choose a setting.",
+        "menu_options": {
+          "pricing": "Electricity price (A1)",
+          "d_tariff": "\"D\" (dynamic) tariff"
+        }
+      },
+      "pricing": {
+        "title": "A1 tariff",
+        "description": "Tiered household tariff: reduced price up to the allowance, market price above it. The allowance can be accounted MONTHLY (~210 kWh/month, as invoiced) or YEARLY (2523 kWh from 1 January).",
+        "data": {
+          "price_low": "Reduced price (HUF/kWh, gross)",
+          "price_high": "Market price above the allowance (HUF/kWh, gross)",
+          "annual_threshold_kwh": "Yearly reduced-price allowance (kWh)",
+          "allowance_period": "Allowance accounting"
+        }
+      },
+      "d_tariff": {
+        "title": "\"D\" (dynamic) tariff",
+        "description": "The \"D\" tariff keeps the same allowance: up to it, the A1 price; only the overage is priced at the 15-minute HUPX market price. Prices are downloaded from the internet (api.energy-charts.info, and - if the rate is 0 - the MNB daily EUR/HUF rate); this is the only place the integration uses the network. The fees are estimates and freely editable.",
+        "data": {
+          "d_enabled": "Enable the D-tariff calculation",
+          "d_merchant_fee_huf_kwh": "Merchant fee (HUF/kWh, net)",
+          "d_transmission_fee_huf_kwh": "Transmission system fee (HUF/kWh, net)",
+          "d_distribution_fee_huf_kwh": "Distribution system fee (HUF/kWh, net)",
+          "d_vat_percent": "VAT (%)",
+          "d_eur_huf": "EUR/HUF rate (0 = MNB daily rate, fetched automatically)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "allowance_period": {
+      "options": {
+        "monthly": "Monthly (~210 kWh/month, as invoiced)",
+        "yearly": "Yearly (2523 kWh from 1 Jan)"
+      }
+    }
+  }
+}

@@ -3,9 +3,24 @@
     "step": {
       "user": {
         "title": "MVM Tarifa",
+        "description": "Honnan érkezzen a fogyasztási adat?",
+        "data": {
+          "data_source": "Adatforrás"
+        }
+      },
+      "mqtt": {
+        "title": "MQTT (P1 mérő regiszterek)",
         "description": "Add meg a saját ESP-s P1 mérőd MQTT gyökér-topikját (a jantenhove/esp8266_p1meter projekt alapértelmezetten \"sensors/power/p1meter\" alá publikál).",
         "data": {
           "mqtt_root_topic": "MQTT gyökér-topik"
+        }
+      },
+      "power_sensors": {
+        "title": "Teljesítmény-szenzorok",
+        "description": "Válaszd ki a pillanatnyi import és (opcionálisan) export teljesítményt mérő meglévő HA szenzort (kW). Ezekből az integráció óránként kWh-t számol (trapéz-integrálás), az import mínusz export a nettó fogyasztás.",
+        "data": {
+          "import_power_entity": "Import teljesítmény szenzor (kW)",
+          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)"
         }
       }
     },
@@ -19,8 +34,19 @@
         "title": "MVM Tarifa",
         "description": "Válassz beállítást.",
         "menu_options": {
+          "data_source": "Adatforrás",
           "pricing": "Áram ára (A1)",
           "d_tariff": "D (dinamikus) tarifa"
+        }
+      },
+      "data_source": {
+        "title": "Adatforrás",
+        "description": "MQTT: a P1 mérő két tarifaregisztere (Wh) a jantenhove/esp8266_p1meter topic-formátumban. Teljesítmény-szenzorok: egy meglévő HA import (és opcionálisan export) teljesítmény-szenzor (kW) kerül óránként kWh-vá integrálva, az import mínusz export a nettó fogyasztás. Csak a kiválasztott adatforráshoz tartozó mezők számítanak.",
+        "data": {
+          "data_source": "Adatforrás",
+          "mqtt_root_topic": "MQTT gyökér-topik",
+          "import_power_entity": "Import teljesítmény szenzor (kW)",
+          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)"
         }
       },
       "pricing": {
@@ -52,6 +78,12 @@
       "options": {
         "monthly": "Havi (a számlán megjelenő ~210 kWh/hó)",
         "yearly": "Éves (2523 kWh, jan. 1-től)"
+      }
+    },
+    "data_source": {
+      "options": {
+        "mqtt": "MQTT (P1 mérő regiszterek)",
+        "power_sensors": "Teljesítmény-szenzorok (import/export)"
       }
     }
   }

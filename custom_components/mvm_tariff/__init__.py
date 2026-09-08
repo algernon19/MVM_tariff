@@ -11,7 +11,7 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 
-from .const import DOMAIN
+from .const import DATA_SOURCE_POWER_SENSORS, DOMAIN
 from .coordinator import MvmTariffCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,7 +23,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up MVM Tariff Cost from a config entry."""
     coordinator = MvmTariffCoordinator(hass, entry)
     await coordinator.async_load()
-    await coordinator.async_setup_mqtt()
+
+    if coordinator.data_source == DATA_SOURCE_POWER_SENSORS:
+        coordinator.async_setup_power_sensors()
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass, coordinator.async_persist_power_accumulators, timedelta(minutes=5)
+            )
+        )
+    else:
+        await coordinator.async_setup_mqtt()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
@@ -45,7 +54,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_track_time_interval(hass, _refresh_current, timedelta(minutes=15))
     )
 
+    # Reload on options change (e.g. switching data source) so the new
+    # MQTT/power-sensor subscriptions actually take effect.
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -54,4 +71,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         coordinator: MvmTariffCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         coordinator.async_unsub_mqtt()
+        coordinator.async_unsub_power_sensors()
     return unload_ok

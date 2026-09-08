@@ -18,9 +18,14 @@ from .const import (
     CONF_D_MERCHANT_FEE,
     CONF_D_TRANSMISSION_FEE,
     CONF_D_VAT_PERCENT,
+    CONF_DATA_SOURCE,
+    CONF_EXPORT_POWER_ENTITY,
+    CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
+    DATA_SOURCE_MQTT,
+    DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
     DEFAULT_ANNUAL_THRESHOLD,
     DEFAULT_D_DISTRIBUTION_FEE,
@@ -29,6 +34,7 @@ from .const import (
     DEFAULT_D_MERCHANT_FEE,
     DEFAULT_D_TRANSMISSION_FEE,
     DEFAULT_D_VAT_PERCENT,
+    DEFAULT_DATA_SOURCE,
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
@@ -36,9 +42,37 @@ from .const import (
 )
 
 try:
-    from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig
+    from homeassistant.helpers.selector import (
+        EntitySelector,
+        EntitySelectorConfig,
+        SelectSelector,
+        SelectSelectorConfig,
+    )
 except ImportError:  # pragma: no cover - very old HA core
     SelectSelector = None  # type: ignore[assignment,misc]
+    EntitySelector = None  # type: ignore[assignment,misc]
+    EntitySelectorConfig = None  # type: ignore[assignment,misc]
+
+
+def _data_source_selector():
+    return (
+        SelectSelector(
+            SelectSelectorConfig(
+                options=[DATA_SOURCE_MQTT, DATA_SOURCE_POWER_SENSORS],
+                translation_key="data_source",
+            )
+        )
+        if SelectSelector is not None
+        else vol.In([DATA_SOURCE_MQTT, DATA_SOURCE_POWER_SENSORS])
+    )
+
+
+def _power_entity_selector():
+    return (
+        EntitySelector(EntitySelectorConfig(domain="sensor"))
+        if EntitySelector is not None
+        else str
+    )
 
 
 class MvmTariffConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -50,13 +84,31 @@ class MvmTariffConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
+            if user_input[CONF_DATA_SOURCE] == DATA_SOURCE_POWER_SENSORS:
+                return await self.async_step_power_sensors()
+            return await self.async_step_mqtt()
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_DATA_SOURCE, default=DEFAULT_DATA_SOURCE
+                ): _data_source_selector(),
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema)
+
+    async def async_step_mqtt(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
             await self.async_set_unique_id(DOMAIN)
             self._abort_if_unique_id_configured()
             return self.async_create_entry(
                 title="MVM Tarifa",
                 data={
+                    CONF_DATA_SOURCE: DATA_SOURCE_MQTT,
                     CONF_MQTT_ROOT_TOPIC: user_input[CONF_MQTT_ROOT_TOPIC].strip()
-                    or DEFAULT_MQTT_ROOT_TOPIC
+                    or DEFAULT_MQTT_ROOT_TOPIC,
                 },
             )
 
@@ -67,7 +119,30 @@ class MvmTariffConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): str,
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema)
+        return self.async_show_form(step_id="mqtt", data_schema=schema)
+
+    async def async_step_power_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            await self.async_set_unique_id(DOMAIN)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title="MVM Tarifa",
+                data={
+                    CONF_DATA_SOURCE: DATA_SOURCE_POWER_SENSORS,
+                    CONF_IMPORT_POWER_ENTITY: user_input[CONF_IMPORT_POWER_ENTITY],
+                    CONF_EXPORT_POWER_ENTITY: user_input.get(CONF_EXPORT_POWER_ENTITY),
+                },
+            )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_IMPORT_POWER_ENTITY): _power_entity_selector(),
+                vol.Optional(CONF_EXPORT_POWER_ENTITY): _power_entity_selector(),
+            }
+        )
+        return self.async_show_form(step_id="power_sensors", data_schema=schema)
 
     @staticmethod
     @callback
@@ -84,8 +159,60 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         return self.async_show_menu(
-            step_id="init", menu_options=["pricing", "d_tariff"]
+            step_id="init", menu_options=["data_source", "pricing", "d_tariff"]
         )
+
+    async def async_step_data_source(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        current = {**self.config_entry.data, **self.config_entry.options}
+
+        if user_input is not None:
+            data = {
+                **self.config_entry.options,
+                CONF_DATA_SOURCE: user_input[CONF_DATA_SOURCE],
+            }
+            if user_input[CONF_DATA_SOURCE] == DATA_SOURCE_MQTT:
+                data[CONF_MQTT_ROOT_TOPIC] = (
+                    user_input.get(CONF_MQTT_ROOT_TOPIC, "").strip()
+                    or DEFAULT_MQTT_ROOT_TOPIC
+                )
+            else:
+                data[CONF_IMPORT_POWER_ENTITY] = user_input.get(
+                    CONF_IMPORT_POWER_ENTITY
+                )
+                data[CONF_EXPORT_POWER_ENTITY] = user_input.get(
+                    CONF_EXPORT_POWER_ENTITY
+                )
+            return self.async_create_entry(title="", data=data)
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_DATA_SOURCE,
+                    default=current.get(CONF_DATA_SOURCE, DEFAULT_DATA_SOURCE),
+                ): _data_source_selector(),
+                vol.Optional(
+                    CONF_MQTT_ROOT_TOPIC,
+                    default=current.get(
+                        CONF_MQTT_ROOT_TOPIC, DEFAULT_MQTT_ROOT_TOPIC
+                    ),
+                ): str,
+                vol.Optional(
+                    CONF_IMPORT_POWER_ENTITY,
+                    description={
+                        "suggested_value": current.get(CONF_IMPORT_POWER_ENTITY)
+                    },
+                ): _power_entity_selector(),
+                vol.Optional(
+                    CONF_EXPORT_POWER_ENTITY,
+                    description={
+                        "suggested_value": current.get(CONF_EXPORT_POWER_ENTITY)
+                    },
+                ): _power_entity_selector(),
+            }
+        )
+        return self.async_show_form(step_id="data_source", data_schema=schema)
 
     async def async_step_pricing(
         self, user_input: dict[str, Any] | None = None

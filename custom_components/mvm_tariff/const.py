@@ -15,6 +15,20 @@ TOPIC_HIGH = "consumption_high_tarif"
 
 CONSUMPTION_STATISTIC_NAME = "MVM Tarifa – Fogyasztás"
 
+# --- alternative data source: import/export power sensors -------------------
+# Instead of the two MQTT tariff registers, the live consumption can be
+# integrated (trapezoidal rule, kW * elapsed hours) from a pair of existing HA
+# power sensors - e.g. the ESP8266 P1 Meter's "Actual Power Consumption" /
+# "Actual Return Delivery" entities. Import minus export gives the net kWh,
+# so a solar/return-delivery setup nets against the tiered/D pricing.
+CONF_DATA_SOURCE = "data_source"
+DATA_SOURCE_MQTT = "mqtt"
+DATA_SOURCE_POWER_SENSORS = "power_sensors"
+DEFAULT_DATA_SOURCE = DATA_SOURCE_MQTT
+
+CONF_IMPORT_POWER_ENTITY = "import_power_entity"
+CONF_EXPORT_POWER_ENTITY = "export_power_entity"
+
 # --- A1 tiered household tariff ---------------------------------------------
 CONF_PRICE_LOW = "price_low"
 CONF_PRICE_HIGH = "price_high"

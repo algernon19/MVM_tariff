@@ -38,6 +38,9 @@ from .const import (
     CONF_D_MERCHANT_FEE,
     CONF_D_TRANSMISSION_FEE,
     CONF_D_VAT_PERCENT,
+    CONF_DATA_SOURCE,
+    CONF_EXPORT_POWER_ENTITY,
+    CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
@@ -46,6 +49,7 @@ from .const import (
     COST_STATISTIC_ID,
     COST_STATISTIC_NAME,
     D_PRICE_STORAGE_KEY,
+    DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
     DEFAULT_ANNUAL_THRESHOLD,
     DEFAULT_D_DISTRIBUTION_FEE,
@@ -54,6 +58,7 @@ from .const import (
     DEFAULT_D_MERCHANT_FEE,
     DEFAULT_D_TRANSMISSION_FEE,
     DEFAULT_D_VAT_PERCENT,
+    DEFAULT_DATA_SOURCE,
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
@@ -147,6 +152,13 @@ class MvmTariffCoordinator:
         self._latest_low: float | None = None
         self._latest_high: float | None = None
 
+        # -- power-sensor data source (trapezoidal kW -> kWh integration) --
+        self._unsub_power: list = []
+        self._power_last_value: dict[str, float] = {}
+        self._power_last_time: dict[str, datetime] = {}
+        self._power_import_kwh: float = 0.0
+        self._power_export_kwh: float = 0.0
+
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="MVM Tarifa",
@@ -159,6 +171,18 @@ class MvmTariffCoordinator:
         if key in self.entry.options:
             return self.entry.options[key]
         return self.entry.data.get(key, default)
+
+    @property
+    def data_source(self) -> str:
+        return str(self._opt(CONF_DATA_SOURCE, DEFAULT_DATA_SOURCE))
+
+    @property
+    def import_power_entity(self) -> str | None:
+        return self._opt(CONF_IMPORT_POWER_ENTITY, None)
+
+    @property
+    def export_power_entity(self) -> str | None:
+        return self._opt(CONF_EXPORT_POWER_ENTITY, None)
 
     @property
     def mqtt_root_topic(self) -> str:
@@ -201,7 +225,15 @@ class MvmTariffCoordinator:
 
     @property
     def total_kwh(self) -> float | None:
-        """Live cumulative consumption: low + high tariff registers, in kWh."""
+        """Live cumulative *net* consumption, in kWh.
+
+        MQTT mode: sum of the low + high tariff registers. Power-sensor mode:
+        the running import-minus-export integral (see `_integrate_power`).
+        """
+        if self.data_source == DATA_SOURCE_POWER_SENSORS:
+            if not self.import_power_entity and not self.export_power_entity:
+                return None
+            return round(self._power_import_kwh - self._power_export_kwh, 3)
         if self._latest_low is None or self._latest_high is None:
             return None
         return round((self._latest_low + self._latest_high) / 1000.0, 3)
@@ -209,6 +241,8 @@ class MvmTariffCoordinator:
     # -- persistence -----------------------------------------------------
     async def async_load(self) -> None:
         self.state = await self._store.async_load() or {}
+        self._power_import_kwh = float(self.state.get("power_import_kwh", 0.0))
+        self._power_export_kwh = float(self.state.get("power_export_kwh", 0.0))
 
     async def _async_save(self) -> None:
         await self._store.async_save(self.state)
@@ -252,6 +286,104 @@ class MvmTariffCoordinator:
         for unsub in self._unsub_mqtt:
             unsub()
         self._unsub_mqtt = []
+
+    # -- power-sensor data source --------------------------------------------
+    @callback
+    def async_setup_power_sensors(self) -> None:
+        """Track the configured import/export power sensors and integrate them.
+
+        Each sensor reports instantaneous kW; on every state change the
+        elapsed time since the previous reading is multiplied by the average
+        of the two kW values (trapezoidal rule) and added to that sensor's
+        running kWh total. `total_kwh` above is import minus export.
+        """
+        from homeassistant.helpers.event import async_track_state_change_event
+
+        entities = [
+            e for e in (self.import_power_entity, self.export_power_entity) if e
+        ]
+        if not entities:
+            _LOGGER.warning(
+                "MVM Tarifa: nincs import/export teljesítmény-szenzor beállítva"
+            )
+            return
+
+        @callback
+        def _on_state(event) -> None:
+            new_state = event.data.get("new_state")
+            if new_state is None:
+                return
+            try:
+                power_kw = float(new_state.state)
+            except (TypeError, ValueError):
+                return
+            self._integrate_power(
+                event.data["entity_id"], power_kw, new_state.last_updated
+            )
+
+        self._unsub_power.append(
+            async_track_state_change_event(self.hass, entities, _on_state)
+        )
+
+        # Seed the last-known reading so the very first state change already
+        # has a starting point to integrate from, instead of being dropped.
+        now = datetime.now(timezone.utc)
+        for entity_id in entities:
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            try:
+                self._power_last_value[entity_id] = float(state.state)
+            except (TypeError, ValueError):
+                continue
+            self._power_last_time[entity_id] = now
+
+        _LOGGER.info(
+            "MVM Tarifa: teljesítmény-szenzorok figyelése: import=%s export=%s",
+            self.import_power_entity,
+            self.export_power_entity,
+        )
+
+    @callback
+    def _integrate_power(
+        self, entity_id: str, power_kw: float, timestamp: datetime
+    ) -> None:
+        last_value = self._power_last_value.get(entity_id)
+        last_time = self._power_last_time.get(entity_id)
+        self._power_last_value[entity_id] = power_kw
+        self._power_last_time[entity_id] = timestamp
+
+        if last_value is None or last_time is None:
+            return
+        elapsed_hours = (timestamp - last_time).total_seconds() / 3600.0
+        if elapsed_hours <= 0:
+            return
+
+        energy_kwh = (last_value + power_kw) / 2.0 * elapsed_hours
+        if entity_id == self.import_power_entity:
+            self._power_import_kwh += energy_kwh
+        elif entity_id == self.export_power_entity:
+            self._power_export_kwh += energy_kwh
+        async_dispatcher_send(self.hass, SIGNAL_UPDATE)
+
+    async def async_persist_power_accumulators(self, _now=None) -> None:
+        """Periodic safety-net save, so a restart loses at most a few minutes.
+
+        Unlike the MQTT registers (which report the meter's own absolute
+        totals, so an unclean restart just resumes from the retained value),
+        the power-sensor integral only exists in memory - it must be saved
+        periodically to survive a restart.
+        """
+        if self.data_source != DATA_SOURCE_POWER_SENSORS:
+            return
+        self.state["power_import_kwh"] = round(self._power_import_kwh, 4)
+        self.state["power_export_kwh"] = round(self._power_export_kwh, 4)
+        await self._async_save()
+
+    def async_unsub_power_sensors(self) -> None:
+        for unsub in self._unsub_power:
+            unsub()
+        self._unsub_power = []
 
     # -- current D price + forecast (every 15 minutes) --------------------
     async def async_refresh_current_d(self) -> None:

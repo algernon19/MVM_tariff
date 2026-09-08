@@ -271,6 +271,15 @@ class MvmTariffCoordinator:
         self._power_import_kwh = float(self.state.get("power_import_kwh", 0.0))
         self._power_export_kwh = float(self.state.get("power_export_kwh", 0.0))
 
+        # Restore the last computed sensor values so a restart shows them
+        # immediately instead of "Ismeretlen" until the next hourly recompute.
+        stored_attrs = self.state.get("attributes")
+        if isinstance(stored_attrs, dict):
+            self.attributes = dict(stored_attrs)
+        stored_current_d = self.state.get("current_d")
+        if isinstance(stored_current_d, dict):
+            self.current_d = dict(stored_current_d)
+
         # Migration: the pre-weighted-average D accounting kept a running
         # "sum_d" from a different (hourly simple-average) formula. Drop it so
         # the new 15-minute weighted method starts its cumulative from zero;
@@ -540,6 +549,8 @@ class MvmTariffCoordinator:
             _LOGGER.debug("MVM Tarifa: D ár előrejelzés hiba", exc_info=True)
             data["forecast"] = self.current_d.get("forecast", [])
         self.current_d = data
+        self.state["current_d"] = data
+        await self._async_save()
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 
     # -- hourly cost accounting --------------------------------------------
@@ -615,9 +626,9 @@ class MvmTariffCoordinator:
             }
         )
         self._save_baseline(current_kwh, hour_start_utc)
-        await self._async_save()
 
         self._update_summary(bucket_key, allowance, bucket_used[bucket_key], bucket_hours[bucket_key])
+        await self._async_save()
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 
     def _save_baseline(self, kwh: float, hour_start_utc: datetime) -> None:
@@ -766,7 +777,6 @@ class MvmTariffCoordinator:
             self.state["sum_d"] = cumulative
 
         self.state["d"] = d
-        await self._async_save()
 
         # Keep the D figures on the summary sensors fresh between hourly runs.
         if self.attributes:
@@ -776,6 +786,9 @@ class MvmTariffCoordinator:
             self.attributes["d_period_consumption"] = round(
                 float(d.get("month_kwh", 0.0)), 2
             )
+            self.state["attributes"] = dict(self.attributes)
+
+        await self._async_save()
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 
     def _update_summary(
@@ -811,3 +824,6 @@ class MvmTariffCoordinator:
             "d_period_allowance": d.get("allowance"),
             "d_period_consumption": round(float(d.get("month_kwh", 0.0)), 2),
         }
+        # Persisted so the sensors survive a restart with their last values
+        # (caller saves state right after).
+        self.state["attributes"] = dict(self.attributes)

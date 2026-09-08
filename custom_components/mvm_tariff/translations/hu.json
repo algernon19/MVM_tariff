@@ -17,10 +17,12 @@
       },
       "power_sensors": {
         "title": "Teljesítmény-szenzorok",
-        "description": "Válaszd ki a pillanatnyi import és (opcionálisan) export teljesítményt mérő meglévő HA szenzort (kW). Ezekből az integráció óránként kWh-t számol (trapéz-integrálás), az import mínusz export a nettó fogyasztás.",
+        "description": "Válaszd ki a pillanatnyi import és (opcionálisan) export teljesítményt mérő meglévő HA szenzort (kW). Ezekből az integráció óránként kWh-t számol (trapéz-integrálás), az import mínusz export a nettó fogyasztás. Opcionálisan megadhatod a mérő saját összesített kWh-mérőállását is (pl. \"P1 Active Energy Import/Export Total\") - ezt egyszer, induláskor beolvassa, hogy a fogyasztás-szenzor a valós mérőállástól induljon, ne nulláról.",
         "data": {
           "import_power_entity": "Import teljesítmény szenzor (kW)",
-          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)"
+          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)",
+          "import_energy_reference_entity": "Import kezdő mérőállás (kWh, opcionális)",
+          "export_energy_reference_entity": "Export kezdő mérőállás (kWh, opcionális)"
         }
       }
     },
@@ -46,7 +48,9 @@
           "data_source": "Adatforrás",
           "mqtt_root_topic": "MQTT gyökér-topik",
           "import_power_entity": "Import teljesítmény szenzor (kW)",
-          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)"
+          "export_power_entity": "Export/visszatáplálás teljesítmény szenzor (kW, opcionális)",
+          "import_energy_reference_entity": "Import kezdő mérőállás (kWh, opcionális)",
+          "export_energy_reference_entity": "Export kezdő mérőállás (kWh, opcionális)"
         }
       },
       "pricing": {

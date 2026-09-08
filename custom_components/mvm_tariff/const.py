@@ -29,6 +29,14 @@ DEFAULT_DATA_SOURCE = DATA_SOURCE_MQTT
 CONF_IMPORT_POWER_ENTITY = "import_power_entity"
 CONF_EXPORT_POWER_ENTITY = "export_power_entity"
 
+# Optional: the meter's own absolute cumulative kWh totals (e.g. "P1 Active
+# Energy Import/Export Total"). Read once, only to anchor the running
+# import/export integral to the real meter reading on first setup - so the
+# integration's own consumption sensor reflects the actual meter state
+# instead of starting from zero every time it's (re)configured.
+CONF_IMPORT_ENERGY_REFERENCE = "import_energy_reference_entity"
+CONF_EXPORT_ENERGY_REFERENCE = "export_energy_reference_entity"
+
 # --- A1 tiered household tariff ---------------------------------------------
 CONF_PRICE_LOW = "price_low"
 CONF_PRICE_HIGH = "price_high"

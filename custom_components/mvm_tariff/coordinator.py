@@ -39,7 +39,9 @@ from .const import (
     CONF_D_TRANSMISSION_FEE,
     CONF_D_VAT_PERCENT,
     CONF_DATA_SOURCE,
+    CONF_EXPORT_ENERGY_REFERENCE,
     CONF_EXPORT_POWER_ENTITY,
+    CONF_IMPORT_ENERGY_REFERENCE,
     CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
@@ -191,6 +193,14 @@ class MvmTariffCoordinator:
         return self._opt(CONF_EXPORT_POWER_ENTITY, None)
 
     @property
+    def import_energy_reference_entity(self) -> str | None:
+        return self._opt(CONF_IMPORT_ENERGY_REFERENCE, None)
+
+    @property
+    def export_energy_reference_entity(self) -> str | None:
+        return self._opt(CONF_EXPORT_ENERGY_REFERENCE, None)
+
+    @property
     def mqtt_root_topic(self) -> str:
         return str(self._opt(CONF_MQTT_ROOT_TOPIC, DEFAULT_MQTT_ROOT_TOPIC)).rstrip("/")
 
@@ -314,6 +324,8 @@ class MvmTariffCoordinator:
             )
             return
 
+        self._seed_absolute_reference()
+
         @callback
         def _on_state(event) -> None:
             entity_id = event.data["entity_id"]
@@ -373,6 +385,59 @@ class MvmTariffCoordinator:
             "MVM Tarifa: teljesítmény-szenzorok figyelése: import=%s export=%s",
             self.import_power_entity,
             self.export_power_entity,
+        )
+
+    def _seed_absolute_reference(self) -> None:
+        """Anchor the running total to the meter's own absolute reading.
+
+        Runs once (tracked via "power_baseline_seeded" in storage): if an
+        import/export *energy* reference entity is configured (the meter's
+        real cumulative kWh total, e.g. "P1 Active Energy Import Total"),
+        read its current value and start the running integral from there -
+        so `total_kwh` reflects the actual meter reading instead of zero.
+        Without a reference entity, the sensor simply starts counting from
+        the moment the integration was (re)configured, as before.
+        """
+        if self.state.get("power_baseline_seeded"):
+            return
+
+        seeded = False
+        if self.import_energy_reference_entity:
+            state = self.hass.states.get(self.import_energy_reference_entity)
+            if state is not None:
+                try:
+                    self._power_import_kwh = float(state.state)
+                    seeded = True
+                except (TypeError, ValueError):
+                    _LOGGER.warning(
+                        "MVM Tarifa: az import kezdő mérőállás (%s) nem "
+                        "numerikus, kihagyva",
+                        self.import_energy_reference_entity,
+                    )
+        if self.export_energy_reference_entity:
+            state = self.hass.states.get(self.export_energy_reference_entity)
+            if state is not None:
+                try:
+                    self._power_export_kwh = float(state.state)
+                    seeded = True
+                except (TypeError, ValueError):
+                    _LOGGER.warning(
+                        "MVM Tarifa: az export kezdő mérőállás (%s) nem "
+                        "numerikus, kihagyva",
+                        self.export_energy_reference_entity,
+                    )
+
+        if not seeded:
+            return
+        self.state["power_baseline_seeded"] = True
+        self.state["power_import_kwh"] = round(self._power_import_kwh, 4)
+        self.state["power_export_kwh"] = round(self._power_export_kwh, 4)
+        self.hass.async_create_task(self._async_save())
+        _LOGGER.info(
+            "MVM Tarifa: kezdő mérőállás rögzítve a valós mérőről "
+            "(import=%.3f kWh, export=%.3f kWh)",
+            self._power_import_kwh,
+            self._power_export_kwh,
         )
 
     def _warn_bad_power_sensor(self, entity_id: str, reason: str) -> None:

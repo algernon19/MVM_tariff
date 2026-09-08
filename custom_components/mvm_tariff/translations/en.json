@@ -17,10 +17,12 @@
       },
       "power_sensors": {
         "title": "Power sensors",
-        "description": "Pick an existing HA sensor reporting instantaneous import power, and optionally one for export power (both in kW). The integration turns these into hourly kWh (trapezoidal integration); import minus export is the net consumption.",
+        "description": "Pick an existing HA sensor reporting instantaneous import power, and optionally one for export power (both in kW). The integration turns these into hourly kWh (trapezoidal integration); import minus export is the net consumption. You can also give the meter's own cumulative kWh totals (e.g. \"P1 Active Energy Import/Export Total\") - read once at startup so the consumption sensor starts from the real meter reading instead of zero.",
         "data": {
           "import_power_entity": "Import power sensor (kW)",
-          "export_power_entity": "Export/return-delivery power sensor (kW, optional)"
+          "export_power_entity": "Export/return-delivery power sensor (kW, optional)",
+          "import_energy_reference_entity": "Import starting meter reading (kWh, optional)",
+          "export_energy_reference_entity": "Export starting meter reading (kWh, optional)"
         }
       }
     },
@@ -46,7 +48,9 @@
           "data_source": "Data source",
           "mqtt_root_topic": "MQTT root topic",
           "import_power_entity": "Import power sensor (kW)",
-          "export_power_entity": "Export/return-delivery power sensor (kW, optional)"
+          "export_power_entity": "Export/return-delivery power sensor (kW, optional)",
+          "import_energy_reference_entity": "Import starting meter reading (kWh, optional)",
+          "export_energy_reference_entity": "Export starting meter reading (kWh, optional)"
         }
       },
       "pricing": {

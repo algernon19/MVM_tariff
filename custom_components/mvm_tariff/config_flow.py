@@ -19,7 +19,9 @@ from .const import (
     CONF_D_TRANSMISSION_FEE,
     CONF_D_VAT_PERCENT,
     CONF_DATA_SOURCE,
+    CONF_EXPORT_ENERGY_REFERENCE,
     CONF_EXPORT_POWER_ENTITY,
+    CONF_IMPORT_ENERGY_REFERENCE,
     CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
@@ -133,6 +135,12 @@ class MvmTariffConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_DATA_SOURCE: DATA_SOURCE_POWER_SENSORS,
                     CONF_IMPORT_POWER_ENTITY: user_input[CONF_IMPORT_POWER_ENTITY],
                     CONF_EXPORT_POWER_ENTITY: user_input.get(CONF_EXPORT_POWER_ENTITY),
+                    CONF_IMPORT_ENERGY_REFERENCE: user_input.get(
+                        CONF_IMPORT_ENERGY_REFERENCE
+                    ),
+                    CONF_EXPORT_ENERGY_REFERENCE: user_input.get(
+                        CONF_EXPORT_ENERGY_REFERENCE
+                    ),
                 },
             )
 
@@ -140,6 +148,8 @@ class MvmTariffConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_IMPORT_POWER_ENTITY): _power_entity_selector(),
                 vol.Optional(CONF_EXPORT_POWER_ENTITY): _power_entity_selector(),
+                vol.Optional(CONF_IMPORT_ENERGY_REFERENCE): _power_entity_selector(),
+                vol.Optional(CONF_EXPORT_ENERGY_REFERENCE): _power_entity_selector(),
             }
         )
         return self.async_show_form(step_id="power_sensors", data_schema=schema)
@@ -184,6 +194,12 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                 data[CONF_EXPORT_POWER_ENTITY] = user_input.get(
                     CONF_EXPORT_POWER_ENTITY
                 )
+                data[CONF_IMPORT_ENERGY_REFERENCE] = user_input.get(
+                    CONF_IMPORT_ENERGY_REFERENCE
+                )
+                data[CONF_EXPORT_ENERGY_REFERENCE] = user_input.get(
+                    CONF_EXPORT_ENERGY_REFERENCE
+                )
             return self.async_create_entry(title="", data=data)
 
         schema = vol.Schema(
@@ -208,6 +224,18 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                     CONF_EXPORT_POWER_ENTITY,
                     description={
                         "suggested_value": current.get(CONF_EXPORT_POWER_ENTITY)
+                    },
+                ): _power_entity_selector(),
+                vol.Optional(
+                    CONF_IMPORT_ENERGY_REFERENCE,
+                    description={
+                        "suggested_value": current.get(CONF_IMPORT_ENERGY_REFERENCE)
+                    },
+                ): _power_entity_selector(),
+                vol.Optional(
+                    CONF_EXPORT_ENERGY_REFERENCE,
+                    description={
+                        "suggested_value": current.get(CONF_EXPORT_ENERGY_REFERENCE)
                     },
                 ): _power_entity_selector(),
             }

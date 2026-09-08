@@ -45,13 +45,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    # Refresh the "current D price" + forecast sensors every 15 minutes.
+    # Refresh the "current D price" + forecast sensors on every quarter-hour
+    # boundary (:00/:15/:30/:45), matching the 15-minute HUPX price grid.
     async def _refresh_current(_now=None) -> None:
         await coordinator.async_refresh_current_d()
 
     hass.async_create_task(_refresh_current())
     entry.async_on_unload(
-        async_track_time_interval(hass, _refresh_current, timedelta(minutes=15))
+        async_track_time_change(
+            hass, _refresh_current, minute=[0, 15, 30, 45], second=15
+        )
     )
 
     # Reload on options change (e.g. switching data source) so the new

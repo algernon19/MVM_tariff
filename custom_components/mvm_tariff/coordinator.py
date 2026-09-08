@@ -79,6 +79,11 @@ from .dynamic import (
 _LOGGER = logging.getLogger(__name__)
 BUDAPEST_TZ = ZoneInfo(TIME_ZONE)
 
+# A household import/export reading past this is almost certainly a
+# misconfigured sensor (e.g. a cumulative kWh total picked instead of an
+# instantaneous kW reading) rather than a real power spike.
+MAX_PLAUSIBLE_POWER_KW = 500.0
+
 try:  # Home Assistant >= 2025.x exposes StatisticMeanType, replacing has_mean.
     from homeassistant.components.recorder.models import StatisticMeanType
 
@@ -158,6 +163,7 @@ class MvmTariffCoordinator:
         self._power_last_time: dict[str, datetime] = {}
         self._power_import_kwh: float = 0.0
         self._power_export_kwh: float = 0.0
+        self._power_warned: set[str] = set()
 
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -310,6 +316,7 @@ class MvmTariffCoordinator:
 
         @callback
         def _on_state(event) -> None:
+            entity_id = event.data["entity_id"]
             new_state = event.data.get("new_state")
             if new_state is None:
                 return
@@ -317,9 +324,33 @@ class MvmTariffCoordinator:
                 power_kw = float(new_state.state)
             except (TypeError, ValueError):
                 return
-            self._integrate_power(
-                event.data["entity_id"], power_kw, new_state.last_updated
-            )
+
+            unit = new_state.attributes.get("unit_of_measurement")
+            device_class = new_state.attributes.get("device_class")
+            if unit == "W":
+                power_kw /= 1000.0
+            elif unit not in (None, "kW"):
+                self._warn_bad_power_sensor(
+                    entity_id,
+                    "a mértékegysége (%s) nem teljesítmény (kW/W)" % unit,
+                )
+                return
+            if device_class not in (None, "power"):
+                self._warn_bad_power_sensor(
+                    entity_id,
+                    "az eszközosztálya (%s) nem 'power'" % device_class,
+                )
+                return
+            if abs(power_kw) > MAX_PLAUSIBLE_POWER_KW:
+                self._warn_bad_power_sensor(
+                    entity_id,
+                    "irreálisan nagy értéket adott (%.1f) - valószínűleg egy "
+                    "összesített kWh-mérőállás lett tévedésből pillanatnyi "
+                    "teljesítménynek megadva" % power_kw,
+                )
+                return
+
+            self._integrate_power(entity_id, power_kw, new_state.last_updated)
 
         self._unsub_power.append(
             async_track_state_change_event(self.hass, entities, _on_state)
@@ -342,6 +373,17 @@ class MvmTariffCoordinator:
             "MVM Tarifa: teljesítmény-szenzorok figyelése: import=%s export=%s",
             self.import_power_entity,
             self.export_power_entity,
+        )
+
+    def _warn_bad_power_sensor(self, entity_id: str, reason: str) -> None:
+        if entity_id in self._power_warned:
+            return
+        self._power_warned.add(entity_id)
+        _LOGGER.warning(
+            "MVM Tarifa: a(z) %s szenzor %s - kihagyva, ellenőrizd az "
+            "import/export teljesítmény-szenzor beállítást",
+            entity_id,
+            reason,
         )
 
     @callback

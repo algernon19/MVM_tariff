@@ -80,6 +80,12 @@ SUMMARY_SENSORS: tuple[MvmSummarySensor, ...] = (
         currency_unit=True,
     ),
     MvmSummarySensor(
+        key="d_price_avg",
+        name="MVM Tarifa D tarifa havi átlagár",
+        icon="mdi:cash-sync",
+        unit="HUF/kWh",
+    ),
+    MvmSummarySensor(
         key="gross_huf_kwh",
         name="MVM Tarifa D tarifa aktuális ár",
         icon="mdi:cash-fast",

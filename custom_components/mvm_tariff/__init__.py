@@ -57,6 +57,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
+    # Accrue the "D" (dynamic) tariff at 15-minute resolution, a minute past
+    # each boundary so the just-finished slot's HUPX price is already published
+    # and the hourly A1 accounting (:00:10) has run first.
+    hass.async_create_task(coordinator.async_process_d_quarter())
+    entry.async_on_unload(
+        async_track_time_change(
+            hass, coordinator.async_process_d_quarter,
+            minute=[1, 16, 31, 46], second=30,
+        )
+    )
+
     # Reload on options change (e.g. switching data source) so the new
     # MQTT/power-sensor subscriptions actually take effect.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))

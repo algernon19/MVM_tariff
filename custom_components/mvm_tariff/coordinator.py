@@ -7,12 +7,23 @@ Design, deliberately kept simple:
   sensor, so Home Assistant's own recorder handles its long-term statistics
   and it can be used on the Energy dashboard like any other meter.
 * Once an hour (at the wall-clock hour boundary), the coordinator looks at
-  how much that total grew since the previous boundary, prices that one
-  hour's kWh with the tiered A1 / dynamic-D formula, and appends exactly one
-  new row to each cost statistic - never re-reads or rewrites history, so the
-  cost stays cheap to compute no matter how long the integration has been
-  running.
-* A separate 15-minute timer only refreshes the "current D price" sensors
+  how much that total grew since the previous boundary and prices that one
+  hour's kWh with the tiered A1 formula (chronological allowance fill, exactly
+  how an A1 invoice tiers), appending one new row to the A1 cost statistic.
+* The "D" (dynamic) tariff is billed differently by MVM: every 15 minutes the
+  consumption delta is priced at that quarter-hour's HUPX-based gross price,
+  and two month-to-date totals are kept - Sum(kWh) and Sum(kWh * price). The
+  D energy cost is then
+
+      min(month_kWh, allowance) * A1_kedvezmenyes_ar
+      + max(0, month_kWh - allowance) * (Sum(kWh*price) / month_kWh)
+
+  i.e. the part above the allowance is charged at the *consumption-weighted
+  average* of the whole month's quarter-hourly prices, matching MVM's
+  "ugyfelenkent egyedi egysegar" method. The D cost statistic still gets one
+  hourly row; its cumulative sum self-corrects as the running average drifts,
+  and each month's final figure is frozen at the month boundary.
+* A separate 15-minute timer also refreshes the "current D price" sensors
   and their forecast; it does not touch the recorder.
 """
 from __future__ import annotations
@@ -259,6 +270,19 @@ class MvmTariffCoordinator:
         self.state = await self._store.async_load() or {}
         self._power_import_kwh = float(self.state.get("power_import_kwh", 0.0))
         self._power_export_kwh = float(self.state.get("power_export_kwh", 0.0))
+
+        # Migration: the pre-weighted-average D accounting kept a running
+        # "sum_d" from a different (hourly simple-average) formula. Drop it so
+        # the new 15-minute weighted method starts its cumulative from zero;
+        # its cost statistic should be cleared once in Developer Tools too.
+        if "d" not in self.state and "sum_d" in self.state:
+            _LOGGER.info(
+                "MVM Tarifa: régi D tarifa elszámolás törölve, az új súlyozott "
+                "átlag módszer nulláról indul (a D költség statisztikát is "
+                "érdemes egyszer törölni)"
+            )
+            self.state.pop("sum_d", None)
+            self.state.pop("last_hour_d_cost", None)
 
     async def _async_save(self) -> None:
         await self._store.async_save(self.state)
@@ -578,25 +602,16 @@ class MvmTariffCoordinator:
             sum_a1,
         )
 
-        d_cost: float | None = None
-        sum_d = float(self.state.get("sum_d", 0.0))
-        if self.d_enabled:
-            d_cost, sum_d = await self._async_price_d(
-                hour_start_utc, low_part, high_part, sum_d, currency
-            )
-
         bucket_used[bucket_key] = used_so_far + kwh
         bucket_hours[bucket_key] = bucket_hours.get(bucket_key, 0) + 1
 
         self.state.update(
             {
                 "sum_a1": sum_a1,
-                "sum_d": sum_d,
                 "bucket_used": bucket_used,
                 "bucket_hours": bucket_hours,
                 "last_hour_kwh": kwh,
                 "last_hour_a1_cost": a1_cost,
-                "last_hour_d_cost": d_cost,
             }
         )
         self._save_baseline(current_kwh, hour_start_utc)
@@ -609,46 +624,159 @@ class MvmTariffCoordinator:
         self.state["baseline_kwh"] = kwh
         self.state["baseline_hour"] = hour_start_utc.isoformat()
 
-    async def _async_price_d(
-        self,
-        hour_start_utc: datetime,
-        low_part: float,
-        high_part: float,
-        sum_d: float,
-        currency: str,
-    ) -> tuple[float | None, float]:
-        """Price the overage at the average of the hour's four 15-minute HUPX prices."""
-        store_key = f"{D_PRICE_STORAGE_KEY}_{self.entry.entry_id}"
-        slot_isos = [
-            (hour_start_utc + timedelta(minutes=15 * k)).isoformat() for k in range(4)
-        ]
+    # -- D (dynamic) tariff: 15-minute, consumption-weighted monthly average --
+    def _d_month_allowance(self, local: datetime) -> float:
+        """The kedvezményes sávhatár for the calendar month `local` falls in.
+
+        MVM prorates the yearly allowance (2523 kWh lakossági) by day count:
+        6,91 kWh/day, so a full month is 6,91 × days-in-month. "yearly" mode
+        keeps a single annual bucket instead.
+        """
+        if self.allowance_period == "yearly":
+            return self.annual_threshold
+        days_in_year = 366 if calendar.isleap(local.year) else 365
+        days_in_month = calendar.monthrange(local.year, local.month)[1]
+        return self.annual_threshold * days_in_month / days_in_year
+
+    def _recompute_d_month_cost(self, d: dict, local: datetime) -> None:
+        """Month-to-date D energy cost from the running weighted average."""
+        month_kwh = float(d.get("month_kwh", 0.0))
+        priced_kwh = float(d.get("month_priced_kwh", 0.0))
+        allowance = self._d_month_allowance(local)
+        if priced_kwh > 0:
+            p_avg = float(d["month_weighted"]) / priced_kwh
+        else:
+            p_avg = self.price_high  # fallback until the first slot is priced
+        below = min(month_kwh, allowance)
+        above = max(0.0, month_kwh - allowance)
+        d["allowance"] = round(allowance, 1)
+        d["p_avg"] = round(p_avg, 4)
+        d["month_cost"] = round(below * self.price_low + above * p_avg, 4)
+
+    def _freeze_d_month(self, d: dict) -> None:
+        """Roll the finished month's cost into the permanent cumulative total."""
+        d["prior_sum"] = round(
+            float(d.get("prior_sum", 0.0)) + float(d.get("month_cost", 0.0)), 4
+        )
+        _LOGGER.info(
+            "MVM Tarifa: D tarifa – %s lezárva (%.0f Ft, havi átlagár %.2f Ft/kWh)",
+            d.get("month_key"),
+            float(d.get("month_cost", 0.0)),
+            float(d.get("p_avg", 0.0)),
+        )
+
+    async def async_process_d_quarter(self, _now=None) -> None:
+        """Every 15 minutes: price the just-finished quarter-hour and accrue it.
+
+        Timer fires a minute past each boundary (:01/:16/:31/:46), so the
+        HUPX price for the slot that just ended is already published, and the
+        hourly A1 accounting (:00:10) has run first.
+        """
+        if not self.d_enabled:
+            return
+        current = self.total_kwh
+        if current is None:
+            return
+
+        now_local = datetime.now(BUDAPEST_TZ)
+        slot_end_local = now_local.replace(
+            minute=(now_local.minute // 15) * 15, second=0, microsecond=0
+        )
+        slot_start_local = slot_end_local - timedelta(minutes=15)
+        slot_start_utc = slot_start_local.astimezone(timezone.utc)
+
+        d: dict = dict(self.state.get("d", {}))
+        base = d.get("quarter_baseline_kwh")
+        d["quarter_baseline_kwh"] = current
+        if base is None:
+            self.state["d"] = d
+            await self._async_save()
+            _LOGGER.info(
+                "MVM Tarifa: D tarifa – negyedórás alapvonal rögzítve (%.3f kWh)",
+                current,
+            )
+            return
+
+        delta = round(current - float(base), 4)
+        if delta < 0:
+            _LOGGER.warning(
+                "MVM Tarifa: D tarifa – a fogyasztás csökkent (%.3f -> %.3f), "
+                "negyedóra kihagyva, új alapvonal",
+                float(base),
+                current,
+            )
+            self.state["d"] = d
+            await self._async_save()
+            return
+
+        month_key = slot_start_local.strftime("%Y-%m")
+        if d.get("month_key") != month_key:
+            if d.get("month_key"):
+                self._freeze_d_month(d)
+            d["month_key"] = month_key
+            d["month_kwh"] = 0.0
+            d["month_weighted"] = 0.0
+            d["month_priced_kwh"] = 0.0
+
+        price = None
         try:
             prices, _meta = await async_d_gross_prices(
-                self.hass, store_key, slot_isos, self.d_config
+                self.hass,
+                f"{D_PRICE_STORAGE_KEY}_{self.entry.entry_id}",
+                [slot_start_utc.isoformat()],
+                self.d_config,
             )
-        except Exception:  # noqa: BLE001 - keep the A1 accounting intact
-            _LOGGER.exception("MVM Tarifa: D tarifa óránkénti árlekérés hiba")
-            return None, sum_d
-        if not prices:
-            _LOGGER.debug(
-                "MVM Tarifa: nincs D tarifa ár ehhez az órához (%s), kimarad",
-                hour_start_utc,
-            )
-            return None, sum_d
+            price = prices.get(slot_start_utc.isoformat())
+        except Exception:  # noqa: BLE001 - a timer callback must not raise
+            _LOGGER.exception("MVM Tarifa: D tarifa negyedórás árlekérés hiba")
 
-        avg_price = sum(prices.values()) / len(prices)
-        d_cost = round(low_part * self.price_low + high_part * avg_price, 4)
-        sum_d = round(sum_d + d_cost, 4)
-        _push_cost_row(
-            self.hass,
-            COST_D_STATISTIC_ID,
-            COST_D_STATISTIC_NAME,
-            currency,
-            hour_start_utc,
-            d_cost,
-            sum_d,
-        )
-        return d_cost, sum_d
+        d["month_kwh"] = round(float(d["month_kwh"]) + delta, 4)
+        if price is not None:
+            d["month_weighted"] = round(
+                float(d["month_weighted"]) + delta * price, 4
+            )
+            d["month_priced_kwh"] = round(float(d["month_priced_kwh"]) + delta, 4)
+        else:
+            _LOGGER.debug(
+                "MVM Tarifa: D tarifa – nincs ár ehhez a negyedórához (%s), "
+                "a súlyozott átlagból kimarad",
+                slot_start_utc,
+            )
+
+        self._recompute_d_month_cost(d, slot_start_local)
+
+        if slot_end_local.minute == 0:
+            cumulative = round(
+                float(d.get("prior_sum", 0.0)) + float(d["month_cost"]), 4
+            )
+            hour_start_utc = (slot_end_local - timedelta(hours=1)).astimezone(
+                timezone.utc
+            )
+            currency = self.hass.config.currency or "HUF"
+            increment = round(cumulative - float(self.state.get("sum_d", 0.0)), 4)
+            _push_cost_row(
+                self.hass,
+                COST_D_STATISTIC_ID,
+                COST_D_STATISTIC_NAME,
+                currency,
+                hour_start_utc,
+                increment,
+                cumulative,
+            )
+            self.state["sum_d"] = cumulative
+
+        self.state["d"] = d
+        await self._async_save()
+
+        # Keep the D figures on the summary sensors fresh between hourly runs.
+        if self.attributes:
+            self.attributes["sum_d"] = self.state.get("sum_d")
+            self.attributes["d_price_avg"] = d.get("p_avg")
+            self.attributes["d_period_allowance"] = d.get("allowance")
+            self.attributes["d_period_consumption"] = round(
+                float(d.get("month_kwh", 0.0)), 2
+            )
+        async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 
     def _update_summary(
         self, bucket_key: str, allowance: float, used_total: float, hours: int
@@ -666,6 +794,7 @@ class MvmTariffCoordinator:
                 )
                 crossover = hit.strftime("%Y-%m-%d %H:%M")
 
+        d: dict = self.state.get("d", {})
         self.attributes = {
             "period": bucket_key,
             "period_allowance": round(allowance, 1),
@@ -678,5 +807,7 @@ class MvmTariffCoordinator:
             "sum_d": self.state.get("sum_d"),
             "last_hour_kwh": self.state.get("last_hour_kwh"),
             "last_hour_a1_cost": self.state.get("last_hour_a1_cost"),
-            "last_hour_d_cost": self.state.get("last_hour_d_cost"),
+            "d_price_avg": d.get("p_avg"),
+            "d_period_allowance": d.get("allowance"),
+            "d_period_consumption": round(float(d.get("month_kwh", 0.0)), 2),
         }

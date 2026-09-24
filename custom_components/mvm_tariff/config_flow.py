@@ -12,6 +12,8 @@ from homeassistant.data_entry_flow import FlowResult
 from .const import (
     CONF_ALLOWANCE_PERIOD,
     CONF_ANNUAL_THRESHOLD,
+    CONF_CHEAP_PRICE_OFF,
+    CONF_CHEAP_PRICE_ON,
     CONF_D_DISTRIBUTION_FEE,
     CONF_D_ENABLED,
     CONF_D_EUR_HUF,
@@ -30,6 +32,8 @@ from .const import (
     DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
     DEFAULT_ANNUAL_THRESHOLD,
+    DEFAULT_CHEAP_PRICE_OFF,
+    DEFAULT_CHEAP_PRICE_ON,
     DEFAULT_D_DISTRIBUTION_FEE,
     DEFAULT_D_ENABLED,
     DEFAULT_D_EUR_HUF,
@@ -311,6 +315,8 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                     CONF_D_DISTRIBUTION_FEE: user_input[CONF_D_DISTRIBUTION_FEE],
                     CONF_D_VAT_PERCENT: user_input[CONF_D_VAT_PERCENT],
                     CONF_D_EUR_HUF: user_input[CONF_D_EUR_HUF],
+                    CONF_CHEAP_PRICE_ON: user_input[CONF_CHEAP_PRICE_ON],
+                    CONF_CHEAP_PRICE_OFF: user_input[CONF_CHEAP_PRICE_OFF],
                 },
             )
 
@@ -343,6 +349,14 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_D_EUR_HUF,
                     default=current.get(CONF_D_EUR_HUF, DEFAULT_D_EUR_HUF),
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_CHEAP_PRICE_ON,
+                    default=current.get(CONF_CHEAP_PRICE_ON, DEFAULT_CHEAP_PRICE_ON),
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_CHEAP_PRICE_OFF,
+                    default=current.get(CONF_CHEAP_PRICE_OFF, DEFAULT_CHEAP_PRICE_OFF),
                 ): vol.Coerce(float),
             }
         )

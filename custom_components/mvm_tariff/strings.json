@@ -72,7 +72,9 @@
           "d_transmission_fee_huf_kwh": "Átviteli rendszerhasználati díj (Ft/kWh, nettó)",
           "d_distribution_fee_huf_kwh": "Elosztói rendszerhasználati díj (Ft/kWh, nettó)",
           "d_vat_percent": "ÁFA (%)",
-          "d_eur_huf": "EUR/HUF árfolyam (0 = MNB napi árfolyam automatikusan)"
+          "d_eur_huf": "EUR/HUF árfolyam (0 = MNB napi árfolyam automatikusan)",
+          "cheap_price_on_huf_kwh": "\"Olcsó áram\" bekapcsolási küszöb (Ft/kWh, ez alatt/egyenlő bekapcsol)",
+          "cheap_price_off_huf_kwh": "\"Olcsó áram\" kikapcsolási küszöb (Ft/kWh, e felett/egyenlő kikapcsol)"
         }
       }
     }

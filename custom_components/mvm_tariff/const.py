@@ -73,6 +73,14 @@ DEFAULT_D_DISTRIBUTION_FEE = 18.56
 DEFAULT_D_VAT_PERCENT = 27.0
 DEFAULT_D_EUR_HUF = 0.0  # 0 = MNB daily rate, fetched automatically
 
+# "Olcsó áram" binary sensor hysteresis: turns on at/below CHEAP_PRICE_ON,
+# turns off at/above CHEAP_PRICE_OFF, holds its last state in between so a
+# price hovering near one threshold doesn't chatter the sensor every 15 min.
+CONF_CHEAP_PRICE_ON = "cheap_price_on_huf_kwh"
+CONF_CHEAP_PRICE_OFF = "cheap_price_off_huf_kwh"
+DEFAULT_CHEAP_PRICE_ON = 65.0
+DEFAULT_CHEAP_PRICE_OFF = DEFAULT_PRICE_HIGH
+
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 
 STORAGE_KEY = f"{DOMAIN}.state"

@@ -54,6 +54,8 @@ from .const import (
     CONF_EXPORT_POWER_ENTITY,
     CONF_IMPORT_ENERGY_REFERENCE,
     CONF_IMPORT_POWER_ENTITY,
+    CONF_CHEAP_PRICE_OFF,
+    CONF_CHEAP_PRICE_ON,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
@@ -65,6 +67,8 @@ from .const import (
     DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
     DEFAULT_ANNUAL_THRESHOLD,
+    DEFAULT_CHEAP_PRICE_OFF,
+    DEFAULT_CHEAP_PRICE_ON,
     DEFAULT_D_DISTRIBUTION_FEE,
     DEFAULT_D_ENABLED,
     DEFAULT_D_EUR_HUF,
@@ -169,6 +173,7 @@ class MvmTariffCoordinator:
         self._unsub_mqtt: list = []
         self._latest_low: float | None = None
         self._latest_high: float | None = None
+        self._cheap_on: bool | None = None
 
         # -- power-sensor data source (trapezoidal kW -> kWh integration) --
         self._unsub_power: list = []
@@ -222,6 +227,37 @@ class MvmTariffCoordinator:
     @property
     def price_high(self) -> float:
         return float(self._opt(CONF_PRICE_HIGH, DEFAULT_PRICE_HIGH))
+
+    @property
+    def cheap_price_on(self) -> float:
+        return float(self._opt(CONF_CHEAP_PRICE_ON, DEFAULT_CHEAP_PRICE_ON))
+
+    @property
+    def cheap_price_off(self) -> float:
+        """The turn-off threshold, guaranteed >= cheap_price_on.
+
+        Guards against a misconfigured options entry (e.g. turn-off set
+        below turn-on) collapsing the hysteresis band to nothing.
+        """
+        return max(
+            float(self._opt(CONF_CHEAP_PRICE_OFF, DEFAULT_CHEAP_PRICE_OFF)),
+            self.cheap_price_on,
+        )
+
+    @property
+    def cheap_on(self) -> bool | None:
+        """Hysteresis output: True/False once a price has been seen, else None."""
+        return self._cheap_on
+
+    def _update_cheap_state(self, price: float | None) -> None:
+        if price is None:
+            return
+        if price <= self.cheap_price_on:
+            self._cheap_on = True
+        elif price >= self.cheap_price_off:
+            self._cheap_on = False
+        # else: within the hysteresis band - hold the previous state
+        self.state["cheap_on"] = self._cheap_on
 
     @property
     def annual_threshold(self) -> float:
@@ -279,6 +315,9 @@ class MvmTariffCoordinator:
         stored_current_d = self.state.get("current_d")
         if isinstance(stored_current_d, dict):
             self.current_d = dict(stored_current_d)
+        stored_cheap_on = self.state.get("cheap_on")
+        if isinstance(stored_cheap_on, bool):
+            self._cheap_on = stored_cheap_on
 
         # Migration: earlier D-accounting designs (an hourly simple average,
         # then a 15-min method with its own separate kWh baseline) left state
@@ -557,6 +596,7 @@ class MvmTariffCoordinator:
             data["forecast"] = self.current_d.get("forecast", [])
         self.current_d = data
         self.state["current_d"] = data
+        self._update_cheap_state(data.get("gross_huf_kwh"))
         await self._async_save()
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 

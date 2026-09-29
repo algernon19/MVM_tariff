@@ -261,15 +261,17 @@ async def async_d_price_forecast(
     store_key: str,
     config: DTariffConfig,
     hours_back: int = 2,
-    hours_ahead: int = 24,
+    hours_ahead: int = 48,
 ) -> list[dict[str, object]]:
     """Known HUPX/D-tariff prices from ``hours_back`` ago to ``hours_ahead``.
 
-    HUPX publishes the next day's day-ahead prices around 13:00 CET, so by
-    the afternoon roughly the next ~24-36h are already known - this is what
-    lets an automation plan around tomorrow's cheap/expensive hours. Only
-    slots that are actually published come back; call again later (e.g. on
-    the next 15-minute refresh) to pick up newly published hours.
+    HUPX publishes the next day's day-ahead prices around 13:00 CET. The
+    default 48h window is a rolling "from now", not aligned to calendar
+    days, so it's sized to guarantee tomorrow's slots are included no matter
+    what time of day "now" is (worst case: it's just past midnight, and
+    tomorrow's last slot is ~47h45m away) - once HUPX has actually published
+    them. Only slots that are actually published come back; call again later
+    (e.g. on the next 15-minute refresh) to pick up newly published hours.
     """
     store = DMarketStore(hass, store_key)
     now = datetime.now(timezone.utc)

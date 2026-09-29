@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import calendar
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from homeassistant.components import mqtt
@@ -56,6 +56,7 @@ from .const import (
     CONF_IMPORT_POWER_ENTITY,
     CONF_CHEAP_PRICE_OFF,
     CONF_CHEAP_PRICE_ON,
+    CONF_FALLBACK_WINDOW_HOURS,
     CONF_MQTT_ROOT_TOPIC,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
@@ -76,6 +77,7 @@ from .const import (
     DEFAULT_D_TRANSMISSION_FEE,
     DEFAULT_D_VAT_PERCENT,
     DEFAULT_DATA_SOURCE,
+    DEFAULT_FALLBACK_WINDOW_HOURS,
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
@@ -314,6 +316,86 @@ class MvmTariffCoordinator:
                 break
             current = slot["planned_on"]
         return current
+
+    # -- fallback: cheapest window on a day the absolute threshold never hits -
+    @property
+    def today_local(self) -> date:
+        return datetime.now(BUDAPEST_TZ).date()
+
+    @property
+    def fallback_window_hours(self) -> float:
+        return float(
+            self._opt(CONF_FALLBACK_WINDOW_HOURS, DEFAULT_FALLBACK_WINDOW_HOURS)
+        )
+
+    def _day_slots(self, day: date) -> list[dict[str, object]]:
+        """This coordinator's plan slots (chronological) that fall on `day`, Budapest-local."""
+        result = []
+        for slot in self.plan:
+            try:
+                slot_start = datetime.fromisoformat(str(slot["start"]))
+            except ValueError:
+                continue
+            if slot_start.astimezone(BUDAPEST_TZ).date() == day:
+                result.append(slot)
+        return result
+
+    def day_has_cheap_plan(self, day: date) -> bool | None:
+        """Whether the absolute-threshold plan found any cheap slot on `day`.
+
+        None until that day's forecast is (almost) fully published - a DST
+        day has 92 or 100 slots instead of the usual 96, so 90 is used as a
+        "good enough" completeness bar rather than requiring exactly 96.
+        """
+        slots = self._day_slots(day)
+        if len(slots) < 90:
+            return None
+        return any(slot["planned_on"] for slot in slots)
+
+    def cheapest_window(self, day: date) -> dict[str, object] | None:
+        """The cheapest contiguous `fallback_window_hours` window on `day`.
+
+        A plain rank against that day's own prices, independent of the
+        cheap_price_on/off Ft/kWh thresholds - so a day whose prices never
+        dip below them still gets a "least bad" window to heat in.
+        """
+        slots = sorted(self._day_slots(day), key=lambda s: str(s["start"]))
+        n = max(1, round(self.fallback_window_hours * 4))
+        if len(slots) < n:
+            return None
+        best: dict[str, object] | None = None
+        for i in range(len(slots) - n + 1):
+            window = slots[i : i + n]
+            avg = sum(float(s["gross_huf_kwh"]) for s in window) / n
+            if best is None or avg < best["avg_gross_huf_kwh"]:
+                end = datetime.fromisoformat(str(window[-1]["start"])) + timedelta(
+                    minutes=15
+                )
+                best = {
+                    "start": window[0]["start"],
+                    "end": end.isoformat(),
+                    "avg_gross_huf_kwh": round(avg, 2),
+                }
+        return best
+
+    @property
+    def fallback_on(self) -> bool | None:
+        """On while `now` is inside today's fallback window, but only on a
+        day whose plan never went cheap by the absolute thresholds.
+        """
+        day = self.today_local
+        has_cheap = self.day_has_cheap_plan(day)
+        if has_cheap is None:
+            return None
+        if has_cheap:
+            return False
+        window = self.cheapest_window(day)
+        if window is None:
+            return None
+        now = datetime.now(timezone.utc)
+        start = datetime.fromisoformat(str(window["start"]))
+        end = datetime.fromisoformat(str(window["end"]))
+        return start <= now < end
 
     @property
     def annual_threshold(self) -> float:

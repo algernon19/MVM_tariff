@@ -81,6 +81,12 @@ CONF_CHEAP_PRICE_OFF = "cheap_price_off_huf_kwh"
 DEFAULT_CHEAP_PRICE_ON = 65.0
 DEFAULT_CHEAP_PRICE_OFF = DEFAULT_PRICE_HIGH
 
+# Fallback for a day whose forecast never dips below CHEAP_PRICE_ON: the
+# cheapest contiguous window of this length, picked from that calendar day's
+# own price curve regardless of the absolute Ft/kWh thresholds above.
+CONF_FALLBACK_WINDOW_HOURS = "fallback_window_hours"
+DEFAULT_FALLBACK_WINDOW_HOURS = 2.0
+
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 
 STORAGE_KEY = f"{DOMAIN}.state"

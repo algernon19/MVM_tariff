@@ -74,7 +74,8 @@
           "d_vat_percent": "ÁFA (%)",
           "d_eur_huf": "EUR/HUF árfolyam (0 = MNB napi árfolyam automatikusan)",
           "cheap_price_on_huf_kwh": "\"Olcsó áram\" bekapcsolási küszöb (Ft/kWh, ez alatt/egyenlő bekapcsol)",
-          "cheap_price_off_huf_kwh": "\"Olcsó áram\" kikapcsolási küszöb (Ft/kWh, e felett/egyenlő kikapcsol)"
+          "cheap_price_off_huf_kwh": "\"Olcsó áram\" kikapcsolási küszöb (Ft/kWh, e felett/egyenlő kikapcsol)",
+          "fallback_window_hours": "Tartalék ablak hossza órában (a nap legolcsóbb ilyen hosszú szakasza, ha egész nap a küszöb felett marad az ár)"
         }
       }
     }

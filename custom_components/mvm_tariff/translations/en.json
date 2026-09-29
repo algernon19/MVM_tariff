@@ -74,7 +74,8 @@
           "d_vat_percent": "VAT (%)",
           "d_eur_huf": "EUR/HUF rate (0 = MNB daily rate, fetched automatically)",
           "cheap_price_on_huf_kwh": "\"Cheap price\" turn-on threshold (HUF/kWh, at or below this it turns on)",
-          "cheap_price_off_huf_kwh": "\"Cheap price\" turn-off threshold (HUF/kWh, at or above this it turns off)"
+          "cheap_price_off_huf_kwh": "\"Cheap price\" turn-off threshold (HUF/kWh, at or above this it turns off)",
+          "fallback_window_hours": "Fallback window length in hours (the day's cheapest such window, used when the price never drops below the threshold all day)"
         }
       }
     }

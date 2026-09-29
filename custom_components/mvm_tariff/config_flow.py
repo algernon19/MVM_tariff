@@ -23,6 +23,7 @@ from .const import (
     CONF_DATA_SOURCE,
     CONF_EXPORT_ENERGY_REFERENCE,
     CONF_EXPORT_POWER_ENTITY,
+    CONF_FALLBACK_WINDOW_HOURS,
     CONF_IMPORT_ENERGY_REFERENCE,
     CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_D_TRANSMISSION_FEE,
     DEFAULT_D_VAT_PERCENT,
     DEFAULT_DATA_SOURCE,
+    DEFAULT_FALLBACK_WINDOW_HOURS,
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
@@ -317,6 +319,7 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                     CONF_D_EUR_HUF: user_input[CONF_D_EUR_HUF],
                     CONF_CHEAP_PRICE_ON: user_input[CONF_CHEAP_PRICE_ON],
                     CONF_CHEAP_PRICE_OFF: user_input[CONF_CHEAP_PRICE_OFF],
+                    CONF_FALLBACK_WINDOW_HOURS: user_input[CONF_FALLBACK_WINDOW_HOURS],
                 },
             )
 
@@ -357,6 +360,12 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_CHEAP_PRICE_OFF,
                     default=current.get(CONF_CHEAP_PRICE_OFF, DEFAULT_CHEAP_PRICE_OFF),
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_FALLBACK_WINDOW_HOURS,
+                    default=current.get(
+                        CONF_FALLBACK_WINDOW_HOURS, DEFAULT_FALLBACK_WINDOW_HOURS
+                    ),
                 ): vol.Coerce(float),
             }
         )

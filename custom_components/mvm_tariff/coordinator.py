@@ -259,6 +259,62 @@ class MvmTariffCoordinator:
         # else: within the hysteresis band - hold the previous state
         self.state["cheap_on"] = self._cheap_on
 
+    def _plan_forecast(self) -> list[dict[str, object]]:
+        """Hysteresis walked once, in chronological order, over the whole forecast.
+
+        Unlike `cheap_on` (which only reacts to the latest observed price),
+        this replays the same on/off rule across every known forecast slot -
+        including ones still in the future - so the current slot's plan
+        already reflects prices HUPX has published for later today/tomorrow,
+        letting an automation pre-heat ahead of an upcoming cheap window.
+        """
+        forecast = self.current_d.get("forecast")
+        if not isinstance(forecast, list) or not forecast:
+            return []
+        on_threshold = self.cheap_price_on
+        off_threshold = self.cheap_price_off
+        slots = sorted(
+            (s for s in forecast if isinstance(s, dict) and s.get("start")),
+            key=lambda s: s["start"],
+        )
+        plan: list[dict[str, object]] = []
+        state: bool | None = None
+        for slot in slots:
+            price = slot.get("gross_huf_kwh")
+            if price is None:
+                continue
+            price = float(price)
+            if price <= on_threshold:
+                state = True
+            elif price >= off_threshold:
+                state = False
+            elif state is None:
+                state = False  # unknown starting point inside the band
+            plan.append(
+                {"start": slot["start"], "gross_huf_kwh": price, "planned_on": state}
+            )
+        return plan
+
+    @property
+    def plan(self) -> list[dict[str, object]]:
+        """The full hysteresis plan (past + future slots), oldest first."""
+        return self._plan_forecast()
+
+    @property
+    def plan_on(self) -> bool | None:
+        """The plan's on/off decision for the slot covering right now."""
+        now = datetime.now(timezone.utc)
+        current: bool | None = None
+        for slot in self.plan:
+            try:
+                slot_start = datetime.fromisoformat(str(slot["start"]))
+            except ValueError:
+                continue
+            if slot_start > now:
+                break
+            current = slot["planned_on"]
+        return current
+
     @property
     def annual_threshold(self) -> float:
         return float(self._opt(CONF_ANNUAL_THRESHOLD, DEFAULT_ANNUAL_THRESHOLD))

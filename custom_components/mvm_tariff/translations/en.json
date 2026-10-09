@@ -38,7 +38,8 @@
         "menu_options": {
           "data_source": "Data source",
           "pricing": "Electricity price (A1)",
-          "d_tariff": "\"D\" (dynamic) tariff"
+          "d_tariff": "\"D\" (dynamic) tariff",
+          "temperature": "Outdoor temperature"
         }
       },
       "data_source": {
@@ -76,6 +77,14 @@
           "cheap_price_on_huf_kwh": "\"Cheap price\" turn-on threshold (HUF/kWh, at or below this it turns on)",
           "cheap_price_off_huf_kwh": "\"Cheap price\" turn-off threshold (HUF/kWh, at or above this it turns off)",
           "fallback_window_hours": "Fallback window length in hours (the day's cheapest such window, used when the price never drops below the threshold all day)"
+        }
+      },
+      "temperature": {
+        "title": "Outdoor temperature and consumption",
+        "description": "Pick an outdoor temperature sensor (it needs state_class: measurement so the recorder keeps hourly means). Once a day the integration pairs each day's mean temperature with that day's consumption from recorder statistics, including existing history. Leave empty to disable.",
+        "data": {
+          "outdoor_temp_entity": "Outdoor temperature sensor",
+          "temp_history_days": "History length (days)"
         }
       }
     }

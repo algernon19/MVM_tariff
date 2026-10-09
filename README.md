@@ -80,6 +80,8 @@ brókeredhez).
    - **Áram ára (A1)** – kedvezményes/piaci ár, éves keret, havi vagy éves elszámolás.
    - **D (dinamikus) tarifa** – be-/kikapcsolás, díjtételek, EUR/HUF árfolyam
      (`0` = MNB napi árfolyam automatikusan).
+   - **Kültéri hőmérséklet** – opcionális kültéri hőmérő szenzor és visszatekintés
+     napokban (lásd [Fogyasztás és kültéri hőmérséklet](#fogyasztás-és-kültéri-hőmérséklet)).
 
 ---
 
@@ -97,12 +99,82 @@ brókeredhez).
 | MVM Tarifa Összes költség (A1) | Az integráció indítása óta összesített A1 költség. |
 | MVM Tarifa Összes költség (D) | Ugyanaz, D tarifával (ha be van kapcsolva). |
 | MVM Tarifa D tarifa aktuális ár | Becsült aktuális bruttó D-egységár (Ft/kWh), 15 percenként frissül. Attribútuma: `forecast` (kb. 2 órával vissza, 24 órával előre, negyedóránként – lásd lent). |
+| MVM Tarifa Napi fogyasztás és hőmérséklet | Csak ha van kültéri hőmérő beállítva. Az utolsó teljes nap fogyasztása (kWh). Attribútumai: `date`, `mean_temperature`, `history` (napi `{date, temp, kwh}` lista). |
 | MVM Tarifa D tarifa HUPX nyers ár | Az aktuális HUPX ár Ft/kWh-ra átszámolva, díjak nélkül. Szintén van `forecast` attribútuma. |
 
 A feltöltött statisztikák: **`mvm_tariff:cost_a1`** és **`mvm_tariff:cost_d`** (mindkettő a
 Home Assistantban beállított pénznemben, halmozott összeggel) – ezekhez `statistics-graph`
 kártyával csinálhatsz havi/éves bontású grafikont, vagy az Energia dashboardon adhatod meg
 „Teljes költségeket követő entitás"-ként.
+
+---
+
+## Fogyasztás és kültéri hőmérséklet
+
+Fűtési (pl. klíma/hőszivattyú) fogyasztás követésére. A **Beállítás → Kültéri
+hőmérséklet** menüben válassz egy kültéri hőmérő szenzort. A szenzornak
+`state_class: measurement` kell, hogy a recorder órás átlagot tároljon róla.
+
+Az integráció naponta 00:20-kor (és induláskor) a recorder hosszú távú statisztikáiból
+összepárosítja minden teljes nap **átlaghőmérsékletét** és **fogyasztását** (a
+`MVM Tarifa Fogyasztás` szenzor napi növekménye). Saját állapotot nem tárol, így a már
+meglévő előzmény is azonnal megjelenik, a beállított visszatekintésig (alapból 365 nap).
+A fogyasztás a teljes háztartásé, nem csak a fűtésé.
+
+Az eredmény a `sensor.mvm_tarifa_napi_fogyasztas_es_homerseklet` `history`
+attribútumában van. Ez az attribútum nem kerül a recorder adatbázisába.
+
+### Beépített kártyákkal (HACS nélkül)
+
+A `statistics-graph` kártya egy grafikonon csak egy mértékegységet mutat, ezért két
+egymás alá tett kártya, azonos napi időtengellyel. Cseréld le a hőmérő entitását:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: statistics-graph
+    title: Napi fogyasztás
+    entities:
+      - sensor.mvm_tarifa_fogyasztas
+    stat_types: [change]
+    chart_type: bar
+    period: day
+    days_to_show: 60
+  - type: statistics-graph
+    title: Napi középhőmérséklet
+    entities:
+      - sensor.kulteri_homerseklet
+    stat_types: [mean]
+    chart_type: line
+    period: day
+    days_to_show: 60
+```
+
+### Szórásdiagram: fogyasztás a középhőmérséklet függvényében
+
+Egy pont egy nap. Vízszintesen a napi középhőmérséklet, függőlegesen a napi kWh.
+Ehhez a [plotly-graph](https://github.com/dbuezas/lovelace-plotly-graph-card) kártya
+kell (HACS → Frontend):
+
+```yaml
+type: custom:plotly-graph
+title: Napi fogyasztás vs. középhőmérséklet
+raw_plotly_config: true
+entities:
+  - entity: ""
+    name: Napok
+    type: scatter
+    mode: markers
+    x: $ex (hass.states["sensor.mvm_tarifa_napi_fogyasztas_es_homerseklet"]?.attributes.history ?? []).map(d => d.temp)
+    y: $ex (hass.states["sensor.mvm_tarifa_napi_fogyasztas_es_homerseklet"]?.attributes.history ?? []).map(d => d.kwh)
+    text: $ex (hass.states["sensor.mvm_tarifa_napi_fogyasztas_es_homerseklet"]?.attributes.history ?? []).map(d => d.date)
+    hovertemplate: "%{text}<br>%{x} °C<br>%{y} kWh<extra></extra>"
+layout:
+  xaxis:
+    title: { text: "Napi középhőmérséklet (°C)" }
+  yaxis:
+    title: { text: "Napi fogyasztás (kWh)" }
+```
 
 ---
 

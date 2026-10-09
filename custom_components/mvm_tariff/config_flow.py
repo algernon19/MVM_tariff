@@ -27,8 +27,10 @@ from .const import (
     CONF_IMPORT_ENERGY_REFERENCE,
     CONF_IMPORT_POWER_ENTITY,
     CONF_MQTT_ROOT_TOPIC,
+    CONF_OUTDOOR_TEMP_ENTITY,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
+    CONF_TEMP_HISTORY_DAYS,
     DATA_SOURCE_MQTT,
     DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
@@ -46,6 +48,7 @@ from .const import (
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
+    DEFAULT_TEMP_HISTORY_DAYS,
     DOMAIN,
 )
 
@@ -175,7 +178,7 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         return self.async_show_menu(
-            step_id="init", menu_options=["data_source", "pricing", "d_tariff"]
+            step_id="init", menu_options=["data_source", "pricing", "d_tariff", "temperature"]
         )
 
     async def async_step_data_source(
@@ -370,3 +373,43 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
             }
         )
         return self.async_show_form(step_id="d_tariff", data_schema=schema)
+
+    async def async_step_temperature(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        current = {**self.config_entry.data, **self.config_entry.options}
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    CONF_OUTDOOR_TEMP_ENTITY: user_input.get(CONF_OUTDOOR_TEMP_ENTITY),
+                    CONF_TEMP_HISTORY_DAYS: user_input[CONF_TEMP_HISTORY_DAYS],
+                },
+            )
+
+        temp_selector = (
+            EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="temperature")
+            )
+            if EntitySelector is not None
+            else str
+        )
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_ENTITY,
+                    description={
+                        "suggested_value": current.get(CONF_OUTDOOR_TEMP_ENTITY)
+                    },
+                ): temp_selector,
+                vol.Required(
+                    CONF_TEMP_HISTORY_DAYS,
+                    default=current.get(
+                        CONF_TEMP_HISTORY_DAYS, DEFAULT_TEMP_HISTORY_DAYS
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=7, max=1095)),
+            }
+        )
+        return self.async_show_form(step_id="temperature", data_schema=schema)

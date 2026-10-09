@@ -111,6 +111,8 @@ async def async_setup_entry(
     entities += [
         MvmSummarySensorEntity(entry, coordinator, desc) for desc in SUMMARY_SENSORS
     ]
+    if coordinator.outdoor_temp_entity:
+        entities.append(MvmTempHistorySensor(entry, coordinator))
     async_add_entities(entities)
 
 
@@ -206,3 +208,32 @@ class MvmSummarySensorEntity(_MvmBaseSensor):
             }
         attrs = self._coordinator.attributes
         return {"period": attrs.get("period")}
+
+
+class MvmTempHistorySensor(_MvmBaseSensor):
+    """Last complete day's kWh, with the daily kWh/mean-temperature series."""
+
+    _attr_name = "MVM Tarifa Napi fogyasztás és hőmérséklet"
+    _attr_icon = "mdi:home-thermometer"
+    _attr_native_unit_of_measurement = "kWh"
+    # Up to a year of daily rows exceeds the recorder's 16 KiB attribute limit.
+    _unrecorded_attributes = frozenset({"history"})
+
+    def __init__(self, entry: ConfigEntry, coordinator: MvmTariffCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_temp_history"
+
+    @property
+    def native_value(self) -> float | None:
+        history = self._coordinator.temp_history
+        return history[-1]["kwh"] if history else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        history = self._coordinator.temp_history
+        last = history[-1] if history else {}
+        return {
+            "date": last.get("date"),
+            "mean_temperature": last.get("temp"),
+            "history": history,
+        }

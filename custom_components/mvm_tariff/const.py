@@ -87,6 +87,14 @@ DEFAULT_CHEAP_PRICE_OFF = DEFAULT_PRICE_HIGH
 CONF_FALLBACK_WINDOW_HOURS = "fallback_window_hours"
 DEFAULT_FALLBACK_WINDOW_HOURS = 2.0
 
+# --- outdoor temperature vs daily consumption -------------------------------
+# Optional outdoor temperature sensor (state_class: measurement, so the
+# recorder keeps hourly mean statistics for it). Daily mean temperature and
+# daily kWh are both read back from the recorder's long-term statistics.
+CONF_OUTDOOR_TEMP_ENTITY = "outdoor_temp_entity"
+CONF_TEMP_HISTORY_DAYS = "temp_history_days"
+DEFAULT_TEMP_HISTORY_DAYS = 365
+
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 
 STORAGE_KEY = f"{DOMAIN}.state"

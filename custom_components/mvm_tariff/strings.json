@@ -38,7 +38,8 @@
         "menu_options": {
           "data_source": "Adatforrás",
           "pricing": "Áram ára (A1)",
-          "d_tariff": "D (dinamikus) tarifa"
+          "d_tariff": "D (dinamikus) tarifa",
+          "temperature": "Kültéri hőmérséklet"
         }
       },
       "data_source": {
@@ -76,6 +77,14 @@
           "cheap_price_on_huf_kwh": "\"Olcsó áram\" bekapcsolási küszöb (Ft/kWh, ez alatt/egyenlő bekapcsol)",
           "cheap_price_off_huf_kwh": "\"Olcsó áram\" kikapcsolási küszöb (Ft/kWh, e felett/egyenlő kikapcsol)",
           "fallback_window_hours": "Tartalék ablak hossza órában (a nap legolcsóbb ilyen hosszú szakasza, ha egész nap a küszöb felett marad az ár)"
+        }
+      },
+      "temperature": {
+        "title": "Kültéri hőmérséklet és fogyasztás",
+        "description": "Válassz egy kültéri hőmérő szenzort (state_class: measurement kell, hogy a recorder órás átlagot tároljon). Az integráció a recorder statisztikáiból naponta összepárosítja a napi átlaghőmérsékletet a napi fogyasztással, a meglévő előzményből visszamenőleg is. Üresen hagyva a funkció ki van kapcsolva.",
+        "data": {
+          "outdoor_temp_entity": "Kültéri hőmérő szenzor",
+          "temp_history_days": "Visszatekintés (nap)"
         }
       }
     }

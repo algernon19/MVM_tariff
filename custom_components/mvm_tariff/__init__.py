@@ -68,6 +68,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
+    # Daily kWh vs mean outdoor temperature: rebuilt from recorder statistics
+    # after midnight, once the previous day's last hourly statistic is compiled.
+    hass.async_create_task(coordinator.async_refresh_temp_history())
+    entry.async_on_unload(
+        async_track_time_change(
+            hass, coordinator.async_refresh_temp_history,
+            hour=0, minute=20, second=0,
+        )
+    )
+
     # Reload on options change (e.g. switching data source) so the new
     # MQTT/power-sensor subscriptions actually take effect.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))

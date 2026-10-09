@@ -58,8 +58,10 @@ from .const import (
     CONF_CHEAP_PRICE_ON,
     CONF_FALLBACK_WINDOW_HOURS,
     CONF_MQTT_ROOT_TOPIC,
+    CONF_OUTDOOR_TEMP_ENTITY,
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
+    CONF_TEMP_HISTORY_DAYS,
     COST_D_STATISTIC_ID,
     COST_D_STATISTIC_NAME,
     COST_STATISTIC_ID,
@@ -81,6 +83,7 @@ from .const import (
     DEFAULT_MQTT_ROOT_TOPIC,
     DEFAULT_PRICE_HIGH,
     DEFAULT_PRICE_LOW,
+    DEFAULT_TEMP_HISTORY_DAYS,
     DOMAIN,
     SIGNAL_UPDATE,
     STORAGE_KEY,
@@ -94,6 +97,7 @@ from .dynamic import (
     async_d_gross_prices,
     async_d_price_forecast,
 )
+from .heating import async_daily_temp_vs_consumption
 
 _LOGGER = logging.getLogger(__name__)
 BUDAPEST_TZ = ZoneInfo(TIME_ZONE)
@@ -176,6 +180,7 @@ class MvmTariffCoordinator:
         self._latest_low: float | None = None
         self._latest_high: float | None = None
         self._cheap_on: bool | None = None
+        self.temp_history: list[dict[str, object]] = []
 
         # -- power-sensor data source (trapezoidal kW -> kWh integration) --
         self._unsub_power: list = []
@@ -217,6 +222,14 @@ class MvmTariffCoordinator:
     @property
     def export_energy_reference_entity(self) -> str | None:
         return self._opt(CONF_EXPORT_ENERGY_REFERENCE, None)
+
+    @property
+    def outdoor_temp_entity(self) -> str | None:
+        return self._opt(CONF_OUTDOOR_TEMP_ENTITY, None) or None
+
+    @property
+    def temp_history_days(self) -> int:
+        return int(self._opt(CONF_TEMP_HISTORY_DAYS, DEFAULT_TEMP_HISTORY_DAYS))
 
     @property
     def mqtt_root_topic(self) -> str:
@@ -736,6 +749,25 @@ class MvmTariffCoordinator:
         self.state["current_d"] = data
         self._update_cheap_state(data.get("gross_huf_kwh"))
         await self._async_save()
+        async_dispatcher_send(self.hass, SIGNAL_UPDATE)
+
+    # -- outdoor temperature vs daily consumption ---------------------------
+    async def async_refresh_temp_history(self, _now=None) -> None:
+        if not self.outdoor_temp_entity:
+            return
+        from homeassistant.helpers import entity_registry as er
+
+        consumption_entity_id = er.async_get(self.hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{self.entry.entry_id}_consumption"
+        )
+        if consumption_entity_id is None:
+            return
+        self.temp_history = await async_daily_temp_vs_consumption(
+            self.hass,
+            consumption_entity_id,
+            self.outdoor_temp_entity,
+            self.temp_history_days,
+        )
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
 
     # -- hourly cost accounting --------------------------------------------

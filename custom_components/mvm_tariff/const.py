@@ -88,12 +88,25 @@ CONF_FALLBACK_WINDOW_HOURS = "fallback_window_hours"
 DEFAULT_FALLBACK_WINDOW_HOURS = 2.0
 
 # --- outdoor temperature vs daily consumption -------------------------------
-# Optional outdoor temperature sensor (state_class: measurement, so the
-# recorder keeps hourly mean statistics for it). Daily mean temperature and
-# daily kWh are both read back from the recorder's long-term statistics.
+# Daily kWh is read back from the recorder's long-term statistics. The daily
+# mean temperature comes from either a local outdoor sensor (state_class:
+# measurement, so the recorder keeps hourly means for it) or the Open-Meteo
+# archive API for a location (no API key needed).
+CONF_TEMP_SOURCE = "temp_source"
+TEMP_SOURCE_NONE = "none"
+TEMP_SOURCE_SENSOR = "sensor"
+TEMP_SOURCE_OPEN_METEO = "open_meteo"
+
 CONF_OUTDOOR_TEMP_ENTITY = "outdoor_temp_entity"
+# Empty location name = Home Assistant's configured home coordinates.
+CONF_TEMP_LOCATION_NAME = "temp_location_name"
+CONF_TEMP_LATITUDE = "temp_latitude"
+CONF_TEMP_LONGITUDE = "temp_longitude"
 CONF_TEMP_HISTORY_DAYS = "temp_history_days"
 DEFAULT_TEMP_HISTORY_DAYS = 365
+
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 

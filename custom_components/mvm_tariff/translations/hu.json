@@ -81,12 +81,19 @@
       },
       "temperature": {
         "title": "Kültéri hőmérséklet és fogyasztás",
-        "description": "Válassz egy kültéri hőmérő szenzort (state_class: measurement kell, hogy a recorder órás átlagot tároljon). Az integráció a recorder statisztikáiból naponta összepárosítja a napi átlaghőmérsékletet a napi fogyasztással, a meglévő előzményből visszamenőleg is. Üresen hagyva a funkció ki van kapcsolva.",
+        "description": "A napi fogyasztás mellé a napi átlaghőmérséklet forrása. Hőmérő szenzor: egy saját kültéri hőmérő (state_class: measurement kell, hogy a recorder órás átlagot tároljon). Open-Meteo: internetről letöltött napi középhőmérséklet egy településre, API-kulcs nélkül. Üres településnél a Home Assistantban beállított otthoni helyet használja. Csak a kiválasztott forráshoz tartozó mezők számítanak.",
         "data": {
+          "temp_source": "Hőmérséklet forrása",
           "outdoor_temp_entity": "Kültéri hőmérő szenzor",
+          "temp_location_name": "Település (Open-Meteo, üresen: otthoni hely)",
           "temp_history_days": "Visszatekintés (nap)"
         }
       }
+    },
+    "error": {
+      "temp_entity_required": "Hőmérő szenzor forrásnál ki kell választani a szenzort.",
+      "location_not_found": "Nem található ilyen település.",
+      "cannot_connect": "Az Open-Meteo nem érhető el, próbáld újra később."
     }
   },
   "selector": {
@@ -100,6 +107,13 @@
       "options": {
         "mqtt": "MQTT (P1 mérő regiszterek)",
         "power_sensors": "Teljesítmény-szenzorok (import/export)"
+      }
+    },
+    "temp_source": {
+      "options": {
+        "none": "Kikapcsolva",
+        "sensor": "Saját hőmérő szenzor",
+        "open_meteo": "Open-Meteo (település alapján)"
       }
     }
   }

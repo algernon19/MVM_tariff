@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SIGNAL_UPDATE
+from .const import DOMAIN, SIGNAL_UPDATE, TEMP_SOURCE_NONE
 from .coordinator import MvmTariffCoordinator
 
 _TIER_LABELS = {"kedvezmenyes": "kedvezményes", "piaci": "piaci"}
@@ -111,7 +111,7 @@ async def async_setup_entry(
     entities += [
         MvmSummarySensorEntity(entry, coordinator, desc) for desc in SUMMARY_SENSORS
     ]
-    if coordinator.outdoor_temp_entity:
+    if coordinator.temp_source != TEMP_SOURCE_NONE:
         entities.append(MvmTempHistorySensor(entry, coordinator))
     async_add_entities(entities)
 
@@ -235,5 +235,6 @@ class MvmTempHistorySensor(_MvmBaseSensor):
         return {
             "date": last.get("date"),
             "mean_temperature": last.get("temp"),
+            "temperature_source": self._coordinator.temp_source,
             "history": history,
         }

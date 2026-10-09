@@ -81,12 +81,19 @@
       },
       "temperature": {
         "title": "Outdoor temperature and consumption",
-        "description": "Pick an outdoor temperature sensor (it needs state_class: measurement so the recorder keeps hourly means). Once a day the integration pairs each day's mean temperature with that day's consumption from recorder statistics, including existing history. Leave empty to disable.",
+        "description": "Source of the daily mean temperature paired with daily consumption. Sensor: your own outdoor thermometer (needs state_class: measurement so the recorder keeps hourly means). Open-Meteo: daily mean temperature downloaded for a location, no API key needed. With an empty location, Home Assistant's home location is used. Only the fields of the selected source apply.",
         "data": {
+          "temp_source": "Temperature source",
           "outdoor_temp_entity": "Outdoor temperature sensor",
+          "temp_location_name": "Location (Open-Meteo, empty: home location)",
           "temp_history_days": "History length (days)"
         }
       }
+    },
+    "error": {
+      "temp_entity_required": "Select a sensor for the sensor source.",
+      "location_not_found": "No such location found.",
+      "cannot_connect": "Open-Meteo is unreachable, try again later."
     }
   },
   "selector": {
@@ -100,6 +107,13 @@
       "options": {
         "mqtt": "MQTT (P1 meter registers)",
         "power_sensors": "Power sensors (import/export)"
+      }
+    },
+    "temp_source": {
+      "options": {
+        "none": "Disabled",
+        "sensor": "Own temperature sensor",
+        "open_meteo": "Open-Meteo (by location)"
       }
     }
   }

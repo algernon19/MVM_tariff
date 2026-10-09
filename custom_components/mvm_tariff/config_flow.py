@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
+from aiohttp import ClientError
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -31,6 +32,8 @@ from .const import (
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
     CONF_TEMP_HISTORY_DAYS,
+    CONF_TEMP_LOCATION_NAME,
+    CONF_TEMP_SOURCE,
     DATA_SOURCE_MQTT,
     DATA_SOURCE_POWER_SENSORS,
     DEFAULT_ALLOWANCE_PERIOD,
@@ -50,7 +53,11 @@ from .const import (
     DEFAULT_PRICE_LOW,
     DEFAULT_TEMP_HISTORY_DAYS,
     DOMAIN,
+    TEMP_SOURCE_NONE,
+    TEMP_SOURCE_OPEN_METEO,
+    TEMP_SOURCE_SENSOR,
 )
+from .heating import async_geocode
 
 try:
     from homeassistant.helpers.selector import (
@@ -378,17 +385,49 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         current = {**self.config_entry.data, **self.config_entry.options}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
-                    **self.config_entry.options,
-                    CONF_OUTDOOR_TEMP_ENTITY: user_input.get(CONF_OUTDOOR_TEMP_ENTITY),
-                    CONF_TEMP_HISTORY_DAYS: user_input[CONF_TEMP_HISTORY_DAYS],
-                },
-            )
+            source = user_input[CONF_TEMP_SOURCE]
+            entity = user_input.get(CONF_OUTDOOR_TEMP_ENTITY)
+            location = (user_input.get(CONF_TEMP_LOCATION_NAME) or "").strip()
+            lat = lon = None
+            if source == TEMP_SOURCE_SENSOR and not entity:
+                errors[CONF_OUTDOOR_TEMP_ENTITY] = "temp_entity_required"
+            elif source == TEMP_SOURCE_OPEN_METEO and location:
+                try:
+                    hit = await async_geocode(self.hass, location)
+                except (ClientError, TimeoutError, ValueError):
+                    errors["base"] = "cannot_connect"
+                else:
+                    if hit is None:
+                        errors[CONF_TEMP_LOCATION_NAME] = "location_not_found"
+                    else:
+                        location, lat, lon = hit
 
+            if not errors:
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        **self.config_entry.options,
+                        CONF_TEMP_SOURCE: source,
+                        CONF_OUTDOOR_TEMP_ENTITY: entity,
+                        CONF_TEMP_LOCATION_NAME: location,
+                        CONF_TEMP_LATITUDE: lat,
+                        CONF_TEMP_LONGITUDE: lon,
+                        CONF_TEMP_HISTORY_DAYS: user_input[CONF_TEMP_HISTORY_DAYS],
+                    },
+                )
+            current = {**current, **user_input}
+
+        temp_sources = [TEMP_SOURCE_NONE, TEMP_SOURCE_SENSOR, TEMP_SOURCE_OPEN_METEO]
+        source_selector = (
+            SelectSelector(
+                SelectSelectorConfig(options=temp_sources, translation_key="temp_source")
+            )
+            if SelectSelector is not None
+            else vol.In(temp_sources)
+        )
         temp_selector = (
             EntitySelector(
                 EntitySelectorConfig(domain="sensor", device_class="temperature")
@@ -396,14 +435,26 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
             if EntitySelector is not None
             else str
         )
+        default_source = current.get(CONF_TEMP_SOURCE) or (
+            TEMP_SOURCE_SENSOR
+            if current.get(CONF_OUTDOOR_TEMP_ENTITY)
+            else TEMP_SOURCE_NONE
+        )
         schema = vol.Schema(
             {
+                vol.Required(CONF_TEMP_SOURCE, default=default_source): source_selector,
                 vol.Optional(
                     CONF_OUTDOOR_TEMP_ENTITY,
                     description={
                         "suggested_value": current.get(CONF_OUTDOOR_TEMP_ENTITY)
                     },
                 ): temp_selector,
+                vol.Optional(
+                    CONF_TEMP_LOCATION_NAME,
+                    description={
+                        "suggested_value": current.get(CONF_TEMP_LOCATION_NAME)
+                    },
+                ): str,
                 vol.Required(
                     CONF_TEMP_HISTORY_DAYS,
                     default=current.get(
@@ -412,4 +463,6 @@ class MvmTariffOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(vol.Coerce(int), vol.Range(min=7, max=1095)),
             }
         )
-        return self.async_show_form(step_id="temperature", data_schema=schema)
+        return self.async_show_form(
+            step_id="temperature", data_schema=schema, errors=errors
+        )

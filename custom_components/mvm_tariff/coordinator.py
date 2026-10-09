@@ -62,6 +62,9 @@ from .const import (
     CONF_PRICE_HIGH,
     CONF_PRICE_LOW,
     CONF_TEMP_HISTORY_DAYS,
+    CONF_TEMP_LATITUDE,
+    CONF_TEMP_LONGITUDE,
+    CONF_TEMP_SOURCE,
     COST_D_STATISTIC_ID,
     COST_D_STATISTIC_NAME,
     COST_STATISTIC_ID,
@@ -87,6 +90,9 @@ from .const import (
     DOMAIN,
     SIGNAL_UPDATE,
     STORAGE_KEY,
+    TEMP_SOURCE_NONE,
+    TEMP_SOURCE_OPEN_METEO,
+    TEMP_SOURCE_SENSOR,
     TIME_ZONE,
     TOPIC_HIGH,
     TOPIC_LOW,
@@ -97,7 +103,11 @@ from .dynamic import (
     async_d_gross_prices,
     async_d_price_forecast,
 )
-from .heating import async_daily_temp_vs_consumption
+from .heating import (
+    async_daily_temp_vs_consumption,
+    async_open_meteo_daily_temps,
+    async_sensor_daily_temps,
+)
 
 _LOGGER = logging.getLogger(__name__)
 BUDAPEST_TZ = ZoneInfo(TIME_ZONE)
@@ -224,8 +234,22 @@ class MvmTariffCoordinator:
         return self._opt(CONF_EXPORT_ENERGY_REFERENCE, None)
 
     @property
+    def temp_source(self) -> str:
+        # Entries configured before the source selector existed only had a sensor.
+        default = TEMP_SOURCE_SENSOR if self.outdoor_temp_entity else TEMP_SOURCE_NONE
+        return self._opt(CONF_TEMP_SOURCE, default)
+
+    @property
     def outdoor_temp_entity(self) -> str | None:
         return self._opt(CONF_OUTDOOR_TEMP_ENTITY, None) or None
+
+    @property
+    def temp_coordinates(self) -> tuple[float, float]:
+        lat = self._opt(CONF_TEMP_LATITUDE, None)
+        lon = self._opt(CONF_TEMP_LONGITUDE, None)
+        if lat is None or lon is None:
+            return self.hass.config.latitude, self.hass.config.longitude
+        return float(lat), float(lon)
 
     @property
     def temp_history_days(self) -> int:
@@ -753,7 +777,20 @@ class MvmTariffCoordinator:
 
     # -- outdoor temperature vs daily consumption ---------------------------
     async def async_refresh_temp_history(self, _now=None) -> None:
-        if not self.outdoor_temp_entity:
+        source = self.temp_source
+        if source == TEMP_SOURCE_SENSOR and self.outdoor_temp_entity:
+            temps = await async_sensor_daily_temps(
+                self.hass, self.outdoor_temp_entity, self.temp_history_days
+            )
+        elif source == TEMP_SOURCE_OPEN_METEO:
+            lat, lon = self.temp_coordinates
+            temps = await async_open_meteo_daily_temps(
+                self.hass, lat, lon, self.temp_history_days
+            )
+        else:
+            return
+        if not temps:
+            # Keep the previous series rather than blanking the sensor on a failed fetch.
             return
         from homeassistant.helpers import entity_registry as er
 
@@ -765,7 +802,7 @@ class MvmTariffCoordinator:
         self.temp_history = await async_daily_temp_vs_consumption(
             self.hass,
             consumption_entity_id,
-            self.outdoor_temp_entity,
+            temps,
             self.temp_history_days,
         )
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)

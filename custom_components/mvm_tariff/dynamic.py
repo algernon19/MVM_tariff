@@ -17,10 +17,11 @@ import asyncio
 import html
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientResponseError
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -40,6 +41,14 @@ try:  # local date of a slot needs the real zone
     _BUDAPEST = ZoneInfo("Europe/Budapest")
 except Exception:  # pragma: no cover
     pass
+
+# Days energy-charts had nothing for (404 / empty / rate-limited) -> monotonic
+# time of that attempt. Module-level because a DMarketStore is created per
+# call; without it every 15-minute refresh re-hits the API (twice) for a day
+# that is not published yet, which also runs into its 429 rate limit.
+_RETRY_AFTER_S = 30 * 60
+_EMPTY_DAYS: dict[date, float] = {}
+_WARNED_DAYS: set[date] = set()
 
 _MNB_DAY_RE = re.compile(
     r'<Day date="(\d{4}-\d{2}-\d{2})">.*?curr="EUR">([0-9]+[.,][0-9]+)</Rate>',
@@ -100,7 +109,13 @@ class DMarketStore:
         """
         await self.async_load()
         wanted = {s.replace(second=0, microsecond=0) for s in slots_utc}
-        missing = sorted(s for s in wanted if s.isoformat() not in self._prices)
+        now = time.monotonic()
+        missing = sorted(
+            s
+            for s in wanted
+            if s.isoformat() not in self._prices
+            and now - _EMPTY_DAYS.get(s.date(), -_RETRY_AFTER_S) >= _RETRY_AFTER_S
+        )
         if missing:
             await self._async_fetch_prices(missing[0].date(), missing[-1].date())
             await self._async_save()
@@ -126,6 +141,32 @@ class DMarketStore:
                 ) as resp:
                     resp.raise_for_status()
                     payload = await resp.json(content_type=None)
+            except ClientResponseError as err:
+                self._mark_empty(cursor, chunk_end)
+                if err.status == 404:
+                    # energy-charts answers 404 when the whole range has no
+                    # data: not published yet, or an outage on their side.
+                    log = _LOGGER.debug
+                    if cursor not in _WARNED_DAYS:
+                        _WARNED_DAYS.add(cursor)
+                        if cursor <= datetime.now(_BUDAPEST).date():
+                            log = _LOGGER.warning
+                    log(
+                        "MVM Next: D tarifa – nincs még HU ár az energy-charts-on "
+                        "(%s..%s), %d perc múlva újrapróbálom",
+                        cursor,
+                        chunk_end,
+                        _RETRY_AFTER_S // 60,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "MVM Next: D tarifa árlekérés sikertelen (%s..%s): %s",
+                        cursor,
+                        chunk_end,
+                        err,
+                    )
+                cursor = chunk_end + timedelta(days=1)
+                continue
             except (ClientError, TimeoutError, ValueError) as err:
                 _LOGGER.warning(
                     "MVM Next: D tarifa árlekérés sikertelen (%s..%s): %s",
@@ -144,6 +185,7 @@ class DMarketStore:
             resolution = seconds[1] - seconds[0] if len(seconds) > 1 else 3600
             per_point = max(1, round(resolution / 900))
             added = 0
+            got_days: set[date] = set()
             for sec, price in zip(seconds, prices):
                 if price is None:
                     continue
@@ -154,7 +196,16 @@ class DMarketStore:
                 for k in range(per_point):
                     slot = base + timedelta(minutes=15 * k)
                     self._prices[slot.isoformat()] = value
+                    got_days.add(slot.date())
                     added += 1
+            day = cursor
+            while day <= chunk_end:
+                if day in got_days:
+                    _EMPTY_DAYS.pop(day, None)
+                    _WARNED_DAYS.discard(day)
+                else:
+                    _EMPTY_DAYS[day] = time.monotonic()
+                day += timedelta(days=1)
             _LOGGER.info(
                 "MVM Next: D tarifa – %d negyedórás ár letöltve (%s..%s, %ds felbontás)",
                 added,
@@ -165,6 +216,14 @@ class DMarketStore:
             cursor = chunk_end + timedelta(days=1)
             if cursor <= end:
                 await asyncio.sleep(1)  # be polite to the free API
+
+    @staticmethod
+    def _mark_empty(start: date, end: date) -> None:
+        now = time.monotonic()
+        day = start
+        while day <= end:
+            _EMPTY_DAYS[day] = now
+            day += timedelta(days=1)
 
     # -- MNB EUR/HUF -----------------------------------------------------------
     async def async_rates_for(self, days: list[date]) -> dict[str, float]:

@@ -761,7 +761,11 @@ class MvmTariffCoordinator:
             _LOGGER.debug("MVM Tarifa: aktuális D ár lekérés hiba", exc_info=True)
             return
         if not data:
-            return
+            # No price for the current slot (not published / source outage):
+            # don't keep showing - and switching on - the last known price.
+            data = {}
+            self._cheap_on = None
+            self.state["cheap_on"] = None
         try:
             data["forecast"] = await async_d_price_forecast(
                 self.hass, store_key, self.d_config
